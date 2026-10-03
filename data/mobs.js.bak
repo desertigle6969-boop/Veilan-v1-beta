@@ -1,0 +1,66 @@
+// ============================================================
+// ВЕЙЛАН — ОБЪЕДИНЕНИЕ ВСЕХ МОБОВ + ФУНКЦИИ ПОИСКА
+// ============================================================
+
+const MOBS = Object.assign({}, MOBS_1, MOBS_2, MOBS_3, MOBS_SECRET);
+
+function getMob(id) { return MOBS[id] || null; }
+
+function getMobsByZone(zoneId) {
+  return Object.values(MOBS).filter(m => m.zone === zoneId);
+}
+
+function getMobsByZoneSub(zoneId, subId) {
+  return Object.values(MOBS).filter(m => m.zone === zoneId && m.sub === subId);
+}
+
+function getMobsByLevelRange(minLvl, maxLvl) {
+  return Object.values(MOBS).filter(m => m.level >= minLvl && m.level <= maxLvl);
+}
+
+function getZoneBoss(zoneId) {
+  return Object.values(MOBS).find(m => m.zone === zoneId && m.isBoss);
+}
+
+function getZoneElites(zoneId) {
+  return Object.values(MOBS).filter(m => m.zone === zoneId && m.aiProfile === 'elite');
+}
+
+// Сборка врагов для боя: 5 слотов максимум
+// Логика: 70% обычные + 20% элитный + 10% босс (если в зоне)
+function rollEncounter(zoneId, subId, partySize) {
+  const pool = getMobsByZoneSub(zoneId, subId).filter(m => !m.isBoss);
+  if (pool.length === 0) return [];
+
+  const enemyCount = Math.min(5, 1 + Math.floor(Math.random() * 3) + Math.floor(partySize / 2));
+  const enemies = [];
+
+  for (let i = 0; i < enemyCount; i++) {
+    const roll = Math.random();
+    let pick;
+    if (roll < 0.10) {
+      const elites = pool.filter(m => m.aiProfile === 'elite');
+      if (elites.length > 0) pick = elites[Math.floor(Math.random() * elites.length)];
+    }
+    if (!pick) pick = pool[Math.floor(Math.random() * pool.length)];
+    enemies.push({ mobId: pick.id, hp: pick.hp, maxHp: pick.hp });
+  }
+  return enemies;
+}
+
+// Сборка боссового боя
+function rollBossEncounter(zoneId, subId, partySize) {
+  const boss = Object.values(MOBS).find(m => m.zone === zoneId && m.sub === subId && m.isBoss);
+  if (!boss) return rollEncounter(zoneId, subId, partySize);
+
+  const enemies = [{ mobId: boss.id, hp: boss.hp, maxHp: boss.hp, isBoss: true }];
+
+  // Боссу — 2-4 миньона
+  const minions = getMobsByZoneSub(zoneId, subId).filter(m => !m.isBoss);
+  const minionCount = Math.min(4, 1 + Math.floor(partySize / 2));
+  for (let i = 0; i < minionCount && minions.length > 0; i++) {
+    const pick = minions[Math.floor(Math.random() * minions.length)];
+    enemies.push({ mobId: pick.id, hp: pick.hp, maxHp: pick.hp });
+  }
+  return enemies;
+}

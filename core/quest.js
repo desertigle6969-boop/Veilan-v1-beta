@@ -1,0 +1,224 @@
+// ============================================================
+// ВЕЙЛАН — ДВИЖОК КВЕСТОВ
+// Принять / прогресс / сдать / проверка цепочки
+// ============================================================
+
+(function() {
+
+  // ============================================================
+  // ПРИНЯТЬ КВЕСТ
+  // ============================================================
+
+  function acceptQuest(questId) {
+    if (!window.STATE || !STATE.hero) return { ok: false, reason: 'Нет героя' };
+    if (!window.QUESTS || !QUESTS[questId]) return { ok: false, reason: 'Квест не найден' };
+
+    STATE.quests = STATE.quests || {};
+    if (STATE.quests[questId]) {
+      return { ok: false, reason: 'Квест уже взят' };
+    }
+
+    var quest = QUESTS[questId];
+
+    // Проверка requires (предыдущий квест должен быть завершён)
+    if (quest.requires) {
+      var prev = STATE.quests[quest.requires];
+      if (!prev || prev.status !== 'completed') {
+        return { ok: false, reason: 'Сначала выполни: ' + (QUESTS[quest.requires] ? QUESTS[quest.requires].name : quest.requires) };
+      }
+    }
+
+    // Проверка уровня
+    if (quest.levelReq && STATE.hero.level < quest.levelReq) {
+      return { ok: false, reason: 'Нужен уровень ' + quest.levelReq };
+    }
+
+    STATE.quests[questId] = {
+      id: questId,
+      status: 'active',
+      progress: 0,
+      startedAt: Date.now()
+    };
+
+    if (window.Save && Save.saveState) Save.saveState();
+    if (window.Toast) Toast.good('Взят квест: ' + quest.name);
+    if (window.SFX) SFX.play('quest_accept');
+
+    return { ok: true, quest: quest };
+  }
+
+  // ============================================================
+  // ПРОГРЕСС КВЕСТА (убийство моба / сбор предмета / диалог)
+  // ============================================================
+
+  function addProgress(type, target, amount) {
+    if (!window.STATE || !STATE.hero || !STATE.quests) return;
+    if (amount === undefined) amount = 1;
+
+    for (var qid in STATE.quests) {
+      var st = STATE.quests[qid];
+      if (st.status !== 'active') continue;
+
+      var q = QUESTS[qid];
+      if (!q) continue;
+      if (q.type !== type) continue;
+      if (q.target !== target) continue;
+
+      st.progress = (st.progress || 0) + amount;
+      if (st.progress >= q.count) st.progress = q.count;
+
+      // Автозавершение — уведомление (только один раз)
+      if (st.progress >= q.count && !st._readyNotified) {
+        st._readyNotified = true;
+        if (window.Toast) Toast.good('Квест готов к сдаче: ' + q.name);
+      }
+    }
+  }
+
+  // Обёртки для удобства
+  function onMobKilled(mobId) {
+    addProgress('kill', mobId, 1);
+  }
+
+  function onItemCollected(itemId) {
+    addProgress('fetch', itemId, 1);
+  }
+
+  function onNPCTalked(npcId) {
+    addProgress('talk', npcId, 1);
+  }
+
+  function onZoneReached(zoneId) {
+    addProgress('reach', zoneId, 1);
+  }
+
+  // ============================================================
+  // СДАТЬ КВЕСТ
+  // ============================================================
+
+  function completeQuest(questId) {
+    if (!window.STATE || !STATE.quests) return { ok: false };
+    var st = STATE.quests[questId];
+    if (!st) return { ok: false, reason: 'Квест не взят' };
+    if (st.status !== 'active') return { ok: false, reason: 'Квест не активен' };
+
+    var q = QUESTS[questId];
+    if (!q) return { ok: false };
+
+    // Проверка прогресса
+    if ((st.progress || 0) < q.count) {
+      return { ok: false, reason: 'Ещё не выполнено (' + (st.progress || 0) + '/' + q.count + ')' };
+    }
+
+    // Забираем fetch-предметы (если это fetch-квест)
+    if (q.type === 'fetch' && q.target && window.Inventory) {
+      Inventory.removeFromInventory(q.target, q.count);
+    }
+
+    // Выдача наград
+    var hero = STATE.hero;
+    if (q.rewards) {
+      if (q.rewards.exp && window.Hero && Hero.gainExp) {
+        Hero.gainExp(hero, q.rewards.exp);
+      }
+      if (q.rewards.gold) {
+        hero.gold = (hero.gold || 0) + q.rewards.gold;
+      }
+      if (q.rewards.items && window.Inventory) {
+        for (var i = 0; i < q.rewards.items.length; i++) {
+          var it = q.rewards.items[i];
+          Inventory.addToInventory(it.itemId, it.qty || 1);
+        }
+      }
+    }
+
+    st.status = 'completed';
+    st.completedAt = Date.now();
+
+    if (window.Toast) Toast.good('Квест сдан: ' + q.name);
+    if (window.Save && Save.saveState) Save.saveState();
+
+    return { ok: true, quest: q, rewards: q.rewards };
+  }
+
+  // ============================================================
+  // СПИСКИ КВЕСТОВ
+  // ============================================================
+
+  function getActiveQuests() {
+    var result = [];
+    if (!STATE.quests) return result;
+    for (var qid in STATE.quests) {
+      if (STATE.quests[qid].status === 'active') {
+        var q = QUESTS[qid];
+        if (q) result.push({ id: qid, quest: q, state: STATE.quests[qid] });
+      }
+    }
+    return result;
+  }
+
+  function getCompletedQuests() {
+    var result = [];
+    if (!STATE.quests) return result;
+    for (var qid in STATE.quests) {
+      if (STATE.quests[qid].status === 'completed') {
+        var q = QUESTS[qid];
+        if (q) result.push({ id: qid, quest: q, state: STATE.quests[qid] });
+      }
+    }
+    return result;
+  }
+
+  function getAvailableQuests(npcId) {
+    var result = [];
+    if (!window.QUESTS) return result;
+    if (!STATE.quests) STATE.quests = {};
+
+    for (var qid in QUESTS) {
+      var q = QUESTS[qid];
+      if (q.giver !== npcId) continue;
+      if (STATE.quests[qid]) continue;  // уже взят
+
+      // Проверка requires
+      if (q.requires) {
+        var prev = STATE.quests[q.requires];
+        if (!prev || prev.status !== 'completed') continue;
+      }
+
+      // Проверка уровня
+      if (q.levelReq && STATE.hero.level < q.levelReq) continue;
+
+      result.push(q);
+    }
+    return result;
+  }
+
+  function isQuestReadyToComplete(questId) {
+    if (!STATE.quests || !STATE.quests[questId]) return false;
+    var st = STATE.quests[questId];
+    if (st.status !== 'active') return false;
+    var q = QUESTS[questId];
+    if (!q) return false;
+    return (st.progress || 0) >= q.count;
+  }
+
+  // ============================================================
+  // ЭКСПОРТ
+  // ============================================================
+
+  window.Quest = {
+    acceptQuest: acceptQuest,
+    completeQuest: completeQuest,
+    addProgress: addProgress,
+    onMobKilled: onMobKilled,
+    onItemCollected: onItemCollected,
+    onNPCTalked: onNPCTalked,
+    onZoneReached: onZoneReached,
+    getActiveQuests: getActiveQuests,
+    getCompletedQuests: getCompletedQuests,
+    getAvailableQuests: getAvailableQuests,
+    isQuestReadyToComplete: isQuestReadyToComplete
+  };
+
+  console.log('[quest] загружен');
+})();

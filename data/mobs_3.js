@@ -1,0 +1,549 @@
+// ============================================================
+// ВЕЙЛАН — МОБЫ ЗОН 9-12 (ФИНАЛЬНЫЕ)
+// Зона 9: Мост Ветров (ур. 46-58)
+// Зона 10: Разлом Бездны (ур. 54-68)
+// Зона 11: Крепость Тэрна (ур. 62-74)
+// Зона 12: Сердце Вейлана (ур. 70-80)
+// ============================================================
+
+const MOBS_3 = {
+
+  // ================= ЗОНА 9: МОСТ ВЕТРОВ =================
+
+  elemental_air: {
+    id:'elemental_air', name:'Дух Ветра', sprite:'ELEM_AIR',
+    level:46, type:'elemental', zone:'bridge', sub:'platforms',
+    hp:1166, atk:198, def:56, spd:28, eva:30,
+    exp:383, gold:180,
+    skill:'elemental_gust',
+    lore:'Дух Ветра. Свободен с самого Раскола. Не знает, что такое клетка — и рад этому.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'mat_dust',    chance:0.3, quantity:2 },
+      { itemId:'mat_essence', chance:0.3, quantity:2 }
+    ]
+  },
+  griffon_wild: {
+    id:'griffon_wild', name:'Дикий грифон', sprite:'GRIFFON',
+    level:48, type:'beast', zone:'bridge', sub:'platforms',
+    hp:1215, atk:206, def:64, spd:24, eva:20,
+    exp:399, gold:210,
+    skill:'beast_dive',
+    lore:'Дикий грифон. Помнит всадника. Всадник умер. Грифон не признаёт никого другого.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'mat_thick_hide', chance:0.3, quantity:2 },
+      { itemId:'mat_dust',       chance:0.3, quantity:1 }
+    ]
+  },
+  storm_archer: {
+    id:'storm_archer', name:'Грозовой лучник', sprite:'ARCHER_STORM',
+    level:50, type:'humanoid', zone:'bridge', sub:'platforms',
+    hp:1263, atk:214, def:60, spd:20, eva:18,
+    exp:415, gold:260,
+    skill:'humanoid_lightning_shot',
+    lore:'Лучник, что стреляет молниями. Никогда не промахивался. Ни разу.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'bow_long',   chance:0.12, quantity:1 },
+      { itemId:'mat_dust',   chance:0.30, quantity:2 }
+    ]
+  },
+
+  elemental_lightning: {
+    id:'elemental_lightning', name:'Дух Молнии', sprite:'ELEM_LIGHT',
+    level:52, type:'elemental', zone:'bridge', sub:'thunder',
+    hp:1312, atk:222, def:60, spd:26, eva:24,
+    exp:431, gold:280,
+    skill:'elemental_shock',
+    lore:'Дух Молнии. Бьёт в одно место триста лет. Не помнит, зачем начал.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'mat_dust', chance:0.3, quantity:3 }
+    ]
+  },
+  wyvern: {
+    id:'wyvern', name:'Вивёрн', sprite:'WYVERN',
+    level:54, type:'dragon', zone:'bridge', sub:'thunder',
+    hp:1360, atk:230, def:76, spd:22, eva:16,
+    exp:447, gold:320,
+    skill:'dragon_breath_lightning',
+    lore:'Вивёрн. Меньше дракона, но злее. Летает выше грозы.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'staff_crystal', chance:0.005, quantity:1 },
+      { itemId:'mat_dust',      chance:0.3, quantity:3 }
+    ]
+  },
+  guardian_air: {
+    id:'guardian_air', name:'Страж Ветров', sprite:'GUARD_AIR',
+    level:56, type:'elemental', zone:'bridge', sub:'thunder',
+    hp:1409, atk:237, def:72, spd:24, eva:20,
+    exp:463, gold:340,
+    skill:'elemental_gust',
+    lore:'Страж Ветров. Держит Мост от падения. Три века. Один.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'cloak_mist', chance:0.03, quantity:1 },
+      { itemId:'mat_dust',   chance:0.3, quantity:3 }
+    ]
+  },
+
+  titan_storm: {
+    id:'titan_storm', name:'Громовой Титан', sprite:'TITAN_STORM',
+    level:58, type:'giant', zone:'bridge', sub:'spire',
+    hp:6480, atk:650, def:200, spd:18, eva:12,
+    exp:14000, gold:4500,
+    skill:'elemental_chain_lightning',
+    lore:'Громовой Титан. Стоит на шпиле. Не нападает первым. Ждёт, когда ты подойдёшь.',
+    aiProfile:'elite',
+    loot:[
+      { itemId:'hammer_elder', chance:0.03, quantity:1 },
+      { itemId:'cloak_void',   chance:0.03, quantity:1 },
+      { itemId:'ring_star',    chance:0.03, quantity:1 },
+      { itemId:'mat_dust',     chance:0.3, quantity:15 }
+    ]
+  },
+  elemental_air_elite: {
+    id:'elemental_air_elite', name:'Старший Дух Воздуха', sprite:'ELEM_AIR_ELITE',
+    level:55, type:'elemental', zone:'bridge', sub:'spire',
+    hp:1385, atk:234, def:66, spd:32, eva:34,
+    exp:455, gold:290,
+    skill:'elemental_tornado',
+    lore:'Старший Дух Воздуха. Помнит всех, кто шёл по Мосту. Помнит, кто упал.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'mat_dust', chance:0.3, quantity:3 }
+    ]
+  },
+
+  storm_lord: {
+    id:'storm_lord', name:'Владыка Гроз', sprite:'STORM_LORD',
+    level:58, type:'elemental', zone:'bridge', sub:'core_bridge',
+    hp:24300, atk:754, def:300, spd:24, eva:20,
+    exp:220000, gold:18000,
+    isBoss:true,
+    skill:'boss_strike',
+    skills:['elemental_storm_judgment','elemental_thunder_pillar'],
+    lore:'Владыка Гроз. Держит Мост Ветров на своём дыхании. Если он падёт — Мост падёт тоже.',
+    aiProfile:'boss',
+    phases:[
+      { hpAbove:0.70, pattern:'debuff' },
+      { hpAbove:0.30, pattern:'heavy' },
+      { hpAbove:0.00, pattern:'ult_and_summon' }
+    ],
+    summons:['elemental_lightning','elemental_air','guardian_air'],
+    loot:[
+      { itemId:'staff_elder',     chance:0.03, quantity:1 },
+      { itemId:'cloak_void',      chance:0.03, quantity:1 },
+      { itemId:'ring_star',       chance:0.03, quantity:1 },
+      { itemId:'helm_runed',      chance:0.005, quantity:1 },
+      { itemId:'potion_hp_large', chance:1.00, quantity:10 },
+      { itemId:'shard_5',         chance:0.05, quantity:1 },
+      { itemId:'mat_dust',        chance:0.3, quantity:30 }
+    ]
+  },
+
+  // ================= ЗОНА 10: РАЗЛОМ БЕЗДНЫ =================
+
+  abyss_crawler: {
+    id:'abyss_crawler', name:'Ползун Бездны', sprite:'ABYSS_CRAWLER',
+    level:54, type:'abyss', zone:'rift', sub:'edge',
+    hp:1360, atk:230, def:76, spd:18, eva:12,
+    exp:447, gold:340,
+    skill:'abyss_devour',
+    lore:'Ползун Бездны. Вылез из Разлома, чтобы просто посмотреть. Убивает — от любопытства.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'mat_dust', chance:0.3, quantity:3 }
+    ]
+  },
+  void_wraith: {
+    id:'void_wraith', name:'Призрак Пустоты', sprite:'VOID_WRAITH',
+    level:56, type:'abyss', zone:'rift', sub:'edge',
+    hp:1409, atk:237, def:64, spd:22, eva:26,
+    exp:463, gold:360,
+    skill:'abyss_drain',
+    lore:'Призрак Пустоты. Раньше был кем-то. Теперь — ничто, которое хочет поглотить всё.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'mat_essence', chance:0.3, quantity:3 },
+      { itemId:'mat_dust',    chance:0.3, quantity:2 }
+    ]
+  },
+  rift_guard: {
+    id:'rift_guard', name:'Страж Разлома', sprite:'RIFT_GUARD',
+    level:58, type:'abyss', zone:'rift', sub:'edge',
+    hp:1458, atk:245, def:88, spd:14, eva:8,
+    exp:479, gold:400,
+    skill:'abyss_smash',
+    lore:'Страж Разлома. Бездна назначила его охранять свою рану. Он подчинился.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'chest_runed', chance:0.005, quantity:1 },
+      { itemId:'mat_dust',    chance:0.3, quantity:3 }
+    ]
+  },
+
+  thing_unnamed: {
+    id:'thing_unnamed', name:'Нечто Безымянное', sprite:'UNNAMED',
+    level:60, type:'abyss', zone:'rift', sub:'shards',
+    hp:1506, atk:253, def:72, spd:20, eva:18,
+    exp:495, gold:440,
+    skill:'abyss_mind_crush',
+    lore:'У этой твари нет имени. Никто не выжил, чтобы дать его. Кроме неё самой.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'ring_star',   chance:0.03, quantity:1 },
+      { itemId:'mat_dust',    chance:0.3, quantity:4 }
+    ]
+  },
+  void_knight: {
+    id:'void_knight', name:'Рыцарь Пустоты', sprite:'VOID_KNIGHT',
+    level:62, type:'abyss', zone:'rift', sub:'shards',
+    hp:1555, atk:261, def:100, spd:16, eva:10,
+    exp:511, gold:520,
+    skill:'abyss_cleave',
+    lore:'Рыцарь Пустоты. У него были доспехи, честь, имя. Теперь — только доспехи.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'sword_steel', chance:0.005, quantity:1 },
+      { itemId:'mat_dust',    chance:0.3, quantity:4 }
+    ]
+  },
+  shard_colossus: {
+    id:'shard_colossus', name:'Колосс Осколков', sprite:'SHARD_COLOSSUS',
+    level:64, type:'abyss', zone:'rift', sub:'shards',
+    hp:1603, atk:269, def:120, spd:12, eva:6,
+    exp:527, gold:600,
+    skill:'abyss_quake',
+    lore:'Колосс Осколков. Собран из обломков миров, упавших сюда. Помнит каждый из них.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'belt_giant', chance:0.03, quantity:1 },
+      { itemId:'mat_dust',   chance:0.3, quantity:5 }
+    ]
+  },
+
+  devourer_lesser: {
+    id:'devourer_lesser', name:'Малый Пожиратель', sprite:'DEVOURER',
+    level:66, type:'abyss', zone:'rift', sub:'deep_rift',
+    hp:8100, atk:845, def:280, spd:20, eva:14,
+    exp:25000, gold:7000,
+    skill:'abyss_consume',
+    lore:'Малый Пожиратель. Ещё не вырос. Уже голоден. Это ненадолго.',
+    aiProfile:'elite',
+    loot:[
+      { itemId:'staff_elder', chance:0.03, quantity:1 },
+      { itemId:'ring_star',   chance:0.03, quantity:1 },
+      { itemId:'belt_giant',  chance:0.03, quantity:1 },
+      { itemId:'mat_dust',    chance:0.3, quantity:20 }
+    ]
+  },
+  void_priest: {
+    id:'void_priest', name:'Жрец Пустоты', sprite:'VOID_PRIEST',
+    level:63, type:'abyss', zone:'rift', sub:'deep_rift',
+    hp:1579, atk:265, def:70, spd:18, eva:16,
+    exp:519, gold:560,
+    skill:'abyss_curse',
+    lore:'Жрец Пустоты. Молится тому, что не отвечает. Это и есть его вера.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'amulet_veilan', chance:0.03, quantity:1 },
+      { itemId:'mat_dust',      chance:0.3, quantity:4 }
+    ]
+  },
+
+  devourer: {
+    id:'devourer', name:'Пожиратель', sprite:'DEVOURER_BOSS',
+    level:70, type:'abyss', zone:'rift', sub:'heart_rift',
+    hp:40500, atk:1170, def:480, spd:22, eva:16,
+    exp:400000, gold:35000,
+    isBoss:true,
+    skill:'boss_strike',
+    skills:['abyss_annihilation','abyss_swallow_all'],
+    lore:'Пожиратель. Помнит Вейлан до Раскола. Хочет вернуть его — целиком. Съев.',
+    aiProfile:'boss',
+    phases:[
+      { hpAbove:0.70, pattern:'debuff' },
+      { hpAbove:0.30, pattern:'heavy' },
+      { hpAbove:0.00, pattern:'ult_and_summon' }
+    ],
+    summons:['void_wraith','thing_unnamed','void_knight'],
+    loot:[
+      { itemId:'chest_elder',     chance:0.03, quantity:1 },
+      { itemId:'helm_elder',      chance:0.03, quantity:1 },
+      { itemId:'legs_elder',      chance:0.03, quantity:1 },
+      { itemId:'ring_star',       chance:0.03, quantity:1 },
+      { itemId:'amulet_veilan',   chance:0.03, quantity:1 },
+      { itemId:'potion_hp_large', chance:1.00, quantity:15 },
+      { itemId:'shard_5',         chance:0.05, quantity:1 },
+      { itemId:'mat_dust',        chance:0.3, quantity:50 }
+    ]
+  },
+
+  // ================= ЗОНА 11: КРЕПОСТЬ ТЭРНА =================
+
+  automaton_guard: {
+    id:'automaton_guard', name:'Автоматон-стражник', sprite:'AUTOMATON',
+    level:62, type:'construct', zone:'fortress', sub:'gate',
+    hp:1555, atk:261, def:100, spd:14, eva:6,
+    exp:511, gold:500,
+    skill:'construct_slam',
+    lore:'Автоматон. Создан Тэрном для защиты. Не знает, что Тэрн уже не тот, кем был.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'mat_mithril', chance:0.3, quantity:4 },
+      { itemId:'mat_dust',    chance:0.3, quantity:3 }
+    ]
+  },
+  rune_knight: {
+    id:'rune_knight', name:'Рунный Рыцарь', sprite:'RUNE_KNIGHT',
+    level:64, type:'humanoid', zone:'fortress', sub:'gate',
+    hp:1603, atk:269, def:96, spd:16, eva:10,
+    exp:527, gold:620,
+    skill:'humanoid_rune_smash',
+    lore:'Рунный Рыцарь. Присягнул Тэрну добровольно. Триста лет не пожалел. Пока.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'sword_dawn', chance:0.03, quantity:1 },
+      { itemId:'chest_runed', chance:0.005, quantity:1 },
+      { itemId:'mat_dust',    chance:0.3, quantity:4 }
+    ]
+  },
+  trap_mage: {
+    id:'trap_mage', name:'Маг-ловушка', sprite:'TRAP_MAGE',
+    level:66, type:'humanoid', zone:'fortress', sub:'gate',
+    hp:1652, atk:276, def:74, spd:18, eva:14,
+    exp:543, gold:700,
+    skill:'humanoid_arcane_burst',
+    lore:'Маг-ловушка. Сам — живая ловушка. Убивает, не двигаясь с места.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'staff_elder', chance:0.03, quantity:1 },
+      { itemId:'mat_dust',    chance:0.3, quantity:4 }
+    ]
+  },
+
+  iron_sentinel: {
+    id:'iron_sentinel', name:'Железный Сентинел', sprite:'SENTINEL',
+    level:68, type:'construct', zone:'fortress', sub:'halls',
+    hp:1701, atk:284, def:140, spd:10, eva:4,
+    exp:559, gold:800,
+    skill:'construct_barrage',
+    lore:'Железный Сентинел. Охраняет зал, которого нет. В зале — только пустота.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'chest_runed', chance:0.005, quantity:1 },
+      { itemId:'mat_mithril', chance:0.3, quantity:5 },
+      { itemId:'mother_toy', chance:0.15, quantity:1 },
+      { itemId:'jar_soul', chance:0.25, quantity:1 }
+    ]
+  },
+  chaos_knight: {
+    id:'chaos_knight', name:'Рыцарь Хаоса', sprite:'CHAOS_KNIGHT',
+    level:70, type:'humanoid', zone:'fortress', sub:'halls',
+    hp:1749, atk:292, def:108, spd:18, eva:12,
+    exp:575, gold:900,
+    skill:'humanoid_dark_cleave',
+    lore:'Рыцарь Хаоса. Верит, что порядок — это ложь. Возможно, он прав.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'sword_dawn', chance:0.03, quantity:1 },
+      { itemId:'chest_elder', chance:0.03, quantity:1 },
+      { itemId:'mat_dust',    chance:0.3, quantity:5 },
+      { itemId:'olden_diary', chance:0.20, quantity:1 }
+    ]
+  },
+  titan_guard: {
+    id:'titan_guard', name:'Титан-охранник', sprite:'TITAN_GUARD',
+    level:72, type:'giant', zone:'fortress', sub:'halls',
+    hp:1798, atk:300, def:160, spd:12, eva:6,
+    exp:591, gold:1100,
+    skill:'construct_quake',
+    lore:'Титан-охранник. Один из последних оставшихся. Держит ворота, которых больше нет.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'chest_elder', chance:0.03, quantity:1 },
+      { itemId:'mat_mithril', chance:0.3, quantity:6 },
+      { itemId:'child_toy', chance:0.25, quantity:1 }
+    ]
+  },
+
+  avatar_turn: {
+    id:'avatar_turn', name:'Аватар Тэрна', sprite:'AVATAR_TURN',
+    level:74, type:'construct', zone:'fortress', sub:'throne_turn',
+    hp:12150, atk:1040, def:400, spd:20, eva:14,
+    exp:60000, gold:15000,
+    skill:'construct_annihilate',
+    lore:'Аватар Тэрна. Создан его волей. Говорит его голосом. Умирает вместо него.',
+    aiProfile:'elite',
+    loot:[
+      { itemId:'sword_dawn',  chance:0.03, quantity:1 },
+      { itemId:'chest_elder', chance:0.03, quantity:1 },
+      { itemId:'helm_elder',  chance:0.03, quantity:1 },
+      { itemId:'mat_dust',    chance:0.3, quantity:30 }
+    ]
+  },
+  rune_priest: {
+    id:'rune_priest', name:'Рунный Жрец', sprite:'RUNE_PRIEST',
+    level:68, type:'humanoid', zone:'fortress', sub:'throne_turn',
+    hp:1701, atk:284, def:80, spd:16, eva:12,
+    exp:559, gold:850,
+    skill:'humanoid_holy',
+    lore:'Рунный Жрец. Служит Тэрну как богу. Тэрн принимает это — но не отвечает.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'staff_elder',   chance:0.03, quantity:1 },
+      { itemId:'amulet_veilan', chance:0.03, quantity:1 },
+      { itemId:'mat_dust',      chance:0.3, quantity:5 },
+      { itemId:'turn_map',      chance:0.20, quantity:1 }
+    ]
+  },
+
+  turn_avatar: {
+    id:'turn_avatar', name:'Тэрн Вероломный (Аватар)', sprite:'TURN_BOSS',
+    level:75, type:'construct', zone:'fortress', sub:'throne',
+    hp:80000, atk:1200, def:400, spd:24, eva:18,
+    exp:1000000, gold:120000,
+    isBoss:true,
+    skill:'boss_strike',
+    skills:['construct_final_judgment','construct_dark_apocalypse'],
+    lore:'Тэрн Вероломный. Аватар его воли. Ждёт тебя триста лет. Не разочарован.',
+    aiProfile:'boss',
+    phases:[
+      { hpAbove:0.70, pattern:'debuff' },
+      { hpAbove:0.30, pattern:'heavy' },
+      { hpAbove:0.00, pattern:'ult_and_summon' }
+    ],
+    summons:['rune_knight','chaos_knight','titan_guard'],
+    loot:[
+      { itemId:'sword_dawn',      chance:0.03, quantity:1 },
+      { itemId:'chest_elder',     chance:0.03, quantity:1 },
+      { itemId:'helm_elder',      chance:0.03, quantity:1 },
+      { itemId:'legs_elder',      chance:0.03, quantity:1 },
+      { itemId:'cloak_void',      chance:0.03, quantity:1 },
+      { itemId:'potion_hp_large', chance:1.00, quantity:20 },
+      { itemId:'shard_5',         chance:0.05, quantity:1 },
+      { itemId:'mat_dust',        chance:0.3, quantity:100 }
+    ]
+  },
+
+  // ================= ЗОНА 12: СЕРДЦЕ ВЕЙЛАНА =================
+
+  light_guardian: {
+    id:'light_guardian', name:'Страж Света', sprite:'LIGHT_GUARD',
+    level:72, type:'elemental', zone:'heart', sub:'threshold',
+    hp:1798, atk:300, def:120, spd:18, eva:14,
+    exp:591, gold:1200,
+    skill:'elemental_holy_smash',
+    lore:'Страж Света. Стоит здесь, когда мир был единым. Всё ещё надеется, что вернётся.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'ring_star',   chance:0.03, quantity:1 },
+      { itemId:'mat_dust',    chance:0.3, quantity:6 }
+    ]
+  },
+  dark_guardian: {
+    id:'dark_guardian', name:'Страж Тьмы', sprite:'DARK_GUARD',
+    level:72, type:'abyss', zone:'heart', sub:'threshold',
+    hp:1798, atk:300, def:120, spd:18, eva:14,
+    exp:591, gold:1200,
+    skill:'abyss_dark_smash',
+    lore:'Страж Тьмы. Стоит напротив Света. Тоже надеется. По-своему.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'ring_star',   chance:0.03, quantity:1 },
+      { itemId:'mat_dust',    chance:0.3, quantity:6 }
+    ]
+  },
+  guardian_balance: {
+    id:'guardian_balance', name:'Страж Равновесия', sprite:'BALANCE_GUARD',
+    level:75, type:'construct', zone:'heart', sub:'threshold',
+    hp:1871, atk:312, def:160, spd:16, eva:12,
+    exp:615, gold:1500,
+    skill:'construct_balance',
+    lore:'Страж Равновесия. Между Светом и Тьмой. Без него Вейлан уже распался бы.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'amulet_veilan', chance:0.03, quantity:1 },
+      { itemId:'mat_dust',      chance:0.3, quantity:8 }
+    ]
+  },
+
+  echo_olden: {
+    id:'echo_olden', name:'Эхо Короля Ольдена', sprite:'ECHO_KING',
+    level:76, type:'undead', zone:'heart', sub:'core',
+    hp:1895, atk:315, def:100, spd:20, eva:18,
+    exp:623, gold:1800,
+    skill:'undead_royal_strike',
+    lore:'Эхо Короля Ольдена. Помнит его. Помнит, как он ждал доклада. Помнит, что доклад не пришёл.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'sword_dawn',   chance:0.03, quantity:1 },
+      { itemId:'ring_star',    chance:0.03, quantity:1 }
+    ]
+  },
+  echo_leviathan: {
+    id:'echo_leviathan', name:'Эхо Левиафана', sprite:'ECHO_LEVI',
+    level:77, type:'beast', zone:'heart', sub:'core',
+    hp:1919, atk:319, def:140, spd:18, eva:14,
+    exp:631, gold:2000,
+    skill:'beast_tidal',
+    lore:'Эхо Левиафана. Спит здесь дольше, чем живёт. Триста лет — это для него миг.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'trident_ocean', chance:0.03, quantity:1 },
+      { itemId:'ring_star',     chance:0.03, quantity:1 }
+    ]
+  },
+  echo_titan: {
+    id:'echo_titan', name:'Эхо Титана Кузни', sprite:'ECHO_TITAN',
+    level:78, type:'elemental', zone:'heart', sub:'core',
+    hp:1944, atk:323, def:180, spd:14, eva:8,
+    exp:639, gold:2200,
+    skill:'elemental_meteor',
+    lore:'Эхо Титана Кузни. Огонь, что жжёт триста лет. Не помнит, кто его разжёг.',
+    aiProfile:'trash',
+    loot:[
+      { itemId:'hammer_elder', chance:0.03, quantity:1 },
+      { itemId:'mat_dust',     chance:0.3, quantity:10 }
+    ]
+  },
+
+  herald_light: {
+    id:'herald_light', name:'Вестник Света', sprite:'HERALD_LIGHT',
+    level:79, type:'elemental', zone:'heart', sub:'final',
+    hp:16200, atk:1560, def:550, spd:22, eva:16,
+    exp:150000, gold:25000,
+    skill:'elemental_holy_judgment',
+    lore:'Вестник Света. Пришёл объявить конец. Не знает, кому именно.',
+    aiProfile:'elite',
+    loot:[
+      { itemId:'staff_elder',     chance:0.03, quantity:1 },
+      { itemId:'chest_elder',     chance:0.03, quantity:1 },
+      { itemId:'cloak_void',      chance:0.03, quantity:1 },
+      { itemId:'shard_5',         chance:0.05, quantity:1 },
+      { itemId:'mat_dust',        chance:0.3, quantity:50 }
+    ]
+  },
+  herald_dark: {
+    id:'herald_dark', name:'Вестник Тьмы', sprite:'HERALD_DARK',
+    level:79, type:'abyss', zone:'heart', sub:'final',
+    hp:16200, atk:1560, def:550, spd:22, eva:16,
+    exp:150000, gold:25000,
+    skill:'abyss_dark_judgment',
+    lore:'Вестник Тьмы. Пришёл объявить конец. Не знает, что Свет тоже пришёл.',
+    aiProfile:'elite',
+    loot:[
+      { itemId:'sword_dawn',      chance:0.03, quantity:1 },
+      { itemId:'helm_elder',      chance:0.03, quantity:1 },
+      { itemId:'legs_elder',      chance:0.03, quantity:1 },
+      { itemId:'shard_5',         chance:0.05, quantity:1 },
+      { itemId:'mat_dust',        chance:0.3, quantity:50 }
+    ]
+  },
+
+
+};
+

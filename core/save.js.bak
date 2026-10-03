@@ -1,0 +1,249 @@
+// ============================================================
+// ВЕЙЛАН — СОХРАНЕНИЕ (единый STATE в localStorage)
+// Версия 1.0 — с uid для предметов
+// ============================================================
+
+const SAVE_VERSION = 1;
+const SAVE_KEY = 'veilan_save_v1';
+
+function createEmptyState() {
+  return {
+    version: SAVE_VERSION,
+    timestamp: Date.now(),
+
+    hero: null,
+
+    // Счётчик уникальных id предметов
+    _nextUid: 1,
+
+    // ВАЖНО: equipped хранит НЕ itemId, а uid предмета из inventory
+    equipped: {
+      weapon: null,
+      chest: null,
+      helmet: null,
+      legs: null,
+      cloak: null,
+      ring1: null,
+      ring2: null,
+      amulet: null,
+      belt: null
+    },
+
+    // Формат предмета:
+    // { uid, itemId, quantity, durability?, enhancement?, gems? }
+    inventory: [],
+
+    shards: [],
+
+    quests: {},
+
+    world: {
+      unlockedZones: ['camp'],
+      visitedSubs: ['camp:ash'],
+      killedBosses: [],
+      eventsDone: []
+    },
+
+    party: {
+      mercs: []
+    },
+
+    stats: {
+      playtimeSec: 0,
+      mobsKilled: 0,
+      bossesKilled: 0,
+      deaths: 0,
+      goldEarned: 0,
+      goldSpent: 0,
+      itemsFound: 0,
+      itemsSold: 0,
+      // PvP
+      pvpPoints: 0,
+      pvpKills: { bronze: 0, silver: 0, gold: 0, platinum: 0, legend: 0 },
+      pvpWins: 0,
+      pvpLosses: 0
+    },
+
+    settings: {
+      sound: true,
+      animSpeed: 1.0,
+      autoSaveIntervalSec: 30
+    }
+  };
+}
+
+// ============================================================
+// ГЕНЕРАЦИЯ UID
+// ============================================================
+
+function getNextUid() {
+  if (!window.STATE) return null;
+  if (window.STATE._nextUid === undefined) window.STATE._nextUid = 1;
+  const uid = 'it_' + window.STATE._nextUid;
+  window.STATE._nextUid++;
+  return uid;
+}
+
+// ============================================================
+// СОХРАНЕНИЕ / ЗАГРУЗКА
+// ============================================================
+
+function saveState() {
+  try {
+    if (!window.STATE) return false;
+    window.STATE.timestamp = Date.now();
+    window.STATE.version = SAVE_VERSION;
+    localStorage.setItem(SAVE_KEY, JSON.stringify(window.STATE));
+    return true;
+  } catch (e) {
+    console.error('[save] ошибка сохранения:', e);
+    return false;
+  }
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    return migrateState(JSON.parse(raw));
+  } catch (e) {
+    console.error('[save] ошибка загрузки:', e);
+    return null;
+  }
+}
+
+function migrateState(state) {
+  if (!state || typeof state !== 'object') return createEmptyState();
+  const empty = createEmptyState();
+
+  state.version = state.version || SAVE_VERSION;
+  state._nextUid = state._nextUid || 1;
+
+  state.equipped = Object.assign({}, empty.equipped, state.equipped || {});
+  state.inventory = state.inventory || [];
+  state.shards = state.shards || [];
+  state.quests = Object.assign({}, empty.quests, state.quests || {});
+  state.world = Object.assign({}, empty.world, state.world || {});
+  state.party = Object.assign({}, empty.party, state.party || {});
+  state.stats = Object.assign({}, empty.stats, state.stats || {});
+  if (state.stats.pvpPoints === undefined) state.stats.pvpPoints = 0;
+  if (!state.stats.pvpKills) state.stats.pvpKills = { bronze: 0, silver: 0, gold: 0, platinum: 0, legend: 0 };
+  if (state.stats.pvpWins === undefined) state.stats.pvpWins = 0;
+  if (state.stats.pvpLosses === undefined) state.stats.pvpLosses = 0;
+  state.settings = Object.assign({}, empty.settings, state.settings || {});
+
+  // Миграция постоянных бафов (permanent) — добавлено в v.XX
+  if (state.hero) {
+    if (!state.hero.permanent) state.hero.permanent = {};
+    if (!state.hero.path) state.hero.path = null;
+    var PERM_STATS = ['str','dex','con','int','men','wit','atk','def','mag','crit','hp','mp','sp'];
+    for (var pi = 0; pi < PERM_STATS.length; pi++) {
+      var ps = PERM_STATS[pi];
+      if (typeof state.hero.permanent[ps] !== 'number') state.hero.permanent[ps] = 0;
+    }
+  }
+
+  // Миграция тайных трофеев (consumedSecrets) — v.XX
+  if (state.hero && !state.hero.consumedSecrets) {
+    state.hero.consumedSecrets = {};
+  }
+
+  // Миграция предметов — добиваем поля, если чего-то нет
+  state.inventory = state.inventory.map(function(item) {
+    if (!item.uid) {
+      item.uid = 'it_' + (state._nextUid++);
+    }
+    if (item.enhancement === undefined) item.enhancement = 0;
+    if (!item.gems) item.gems = [null, null, null];
+    return item;
+  });
+
+  return state;
+}
+
+function deleteSave() {
+  try {
+    localStorage.removeItem(SAVE_KEY);
+    return true;
+  } catch (e) {
+    console.error('[save] ошибка удаления:', e);
+    return false;
+  }
+}
+
+// ============================================================
+// ЭКСПОРТ / ИМПОРТ
+// ============================================================
+
+function exportSaveToText() {
+  try {
+    if (!window.STATE) return null;
+    return btoa(unescape(encodeURIComponent(JSON.stringify(window.STATE))));
+  } catch (e) {
+    console.error('[save] ошибка экспорта:', e);
+    return null;
+  }
+}
+
+function importSaveFromText(text) {
+  try {
+    const json = decodeURIComponent(escape(atob(text.trim())));
+    const parsed = JSON.parse(json);
+    const migrated = migrateState(parsed);
+    if (!migrated.hero) return false;
+    window.STATE = migrated;
+    saveState();
+    return true;
+  } catch (e) {
+    console.error('[save] ошибка импорта:', e);
+    return false;
+  }
+}
+
+// ============================================================
+// АВТОСОХРАНЕНИЕ
+// ============================================================
+
+let autoSaveTimer = null;
+
+function startAutoSave() {
+  stopAutoSave();
+  const sec = (window.STATE && window.STATE.settings && window.STATE.settings.autoSaveIntervalSec) || 30;
+  autoSaveTimer = setInterval(() => {
+    if (window.STATE && window.STATE.hero) saveState();
+  }, sec * 1000);
+}
+
+function stopAutoSave() {
+  if (autoSaveTimer) {
+    clearInterval(autoSaveTimer);
+    autoSaveTimer = null;
+  }
+}
+
+function hasSave() {
+  try {
+    return !!localStorage.getItem(SAVE_KEY);
+  } catch (e) {
+    return false;
+  }
+}
+
+// ============================================================
+// ЭКСПОРТ
+// ============================================================
+
+window.Save = {
+  createEmptyState,
+  getNextUid,
+  saveState,
+  loadState,
+  deleteSave,
+  exportSaveToText,
+  importSaveFromText,
+  startAutoSave,
+  stopAutoSave,
+  hasSave,
+  SAVE_KEY,
+  SAVE_VERSION
+};

@@ -1,0 +1,85 @@
+// ============================================================
+// ВЕЙЛАН — ИКОНКИ СКИЛЛОВ
+// Привязка ID скилла -> PNG
+// ============================================================
+
+const SKILL_ICONS = {
+  // ========== СТРАЖ (gua) — тяжёлый воин, свет ==========
+  gua_1:    'sprites/icons/etc/BTN_etc_holy_arrow_i00.png',
+  gua_2:    'sprites/icons/etc/BTN_etc_spell_shot_gold_i00.png',
+  gua_3:    'sprites/icons/etc/BTN_etc_holy_grail_i00.png',
+  gua_4:    'sprites/icons/etc/BTN_etc_holy_crystal_i00.png',
+  gua_ult:  'sprites/icons/etc/BTN_etc_holy_grail_i03.png',
+
+  // ========== КОПЬЕНОСЕЦ (spe) — воин-дракон ==========
+  spe_1:    'sprites/icons/etc/BTN_etc_beast_soul_shot_i00.png',
+  spe_2:    'sprites/icons/etc/BTN_etc_arrowhead_i00.png',
+  spe_3:    'sprites/icons/etc/BTN_etc_beast_spirit_shot_i00.png',
+  spe_4:    'sprites/icons/etc/BTN_etc_soulshot_none_for_rookie_i00.png',
+  spe_ult:  'sprites/icons/etc/BTN_etc_blessed_beast_spirit_shot_i00.png',
+
+  // ========== ОХОТНИК ТЕНИ (sha) — стрелок ==========
+  sha_1:    'sprites/icons/etc/BTN_etc_arrowhead_i00.png',
+  sha_2:    'sprites/icons/etc/BTN_etc_orcish_arrow_i00.png',
+  sha_3:    'sprites/icons/etc/BTN_etc_unholy_arrow_i00.png',
+  sha_4:    'sprites/icons/etc/BTN_etc_beast_soul_shot_i00.png',
+  sha_ult:  'sprites/icons/etc/BTN_etc_destory_soul_arrow_i00.png',
+
+  // ========== ПИРОМАНТ (pyr) — огонь ==========
+  pyr_1:    'sprites/icons/etc/BTN_etc_fire_crystal_i00.png',
+  pyr_2:    'sprites/icons/etc/BTN_etc_fire_crystal_1_i00.png',
+  pyr_3:    'sprites/icons/etc/BTN_Etc_fairy_fire_i00.png',
+  pyr_4:    'sprites/icons/etc/BTN_etc_fire_mantra_i00.png',
+  pyr_ult:  'sprites/icons/etc/BTN_etc_aidcharm_cancel_deathfire_i00.png',
+
+  // ========== КРИОМАНТ (cry) — лёд ==========
+  cry_1:    'sprites/icons/etc/BTN_etc_crystal_spice_blessed_i00.png',
+  cry_2:    'sprites/icons/etc/BTN_etc_crystal_spice_comp_i00.png',
+  cry_3:    'sprites/icons/etc/BTN_etc_crystal_spice_new_i00.png',
+  cry_4:    'sprites/icons/etc/BTN_etc_crystal_spice_s_i00.png',
+  cry_ult:  'sprites/icons/etc/BTN_etc_crystal_spice_blessed_i00.png',
+
+  // ========== ЖРЕЦ СВЕТА (con) — священник ==========
+  con_1:    'sprites/icons/etc/BTN_etc_holy_potion_i00.png',
+  con_2:    'sprites/icons/etc/BTN_etc_holy_grail_i01.png',
+  con_3:    'sprites/icons/etc/BTN_etc_holy_crystal_1_i00.png',
+  con_4:    'sprites/icons/etc/BTN_etc_holy_grail_i02.png',
+  con_ult:  'sprites/icons/etc/BTN_etc_holy_grail_i03.png',
+
+  // ========== БАРД (win) — песни ==========
+  win_1:    'sprites/icons/etc/BTN_etc_spell_shot_blue_i00.png',
+  win_2:    'sprites/icons/etc/BTN_etc_spell_shot_gold_i01.png',
+  win_3:    'sprites/icons/etc/BTN_etc_spell_shot_blue_i01.png',
+  win_4:    'sprites/icons/etc/BTN_etc_holy_crystal_i00.png',
+  win_ult:  'sprites/icons/etc/BTN_etc_spell_shot_gold_i00.png',
+
+  // ========== РУНИСТ (run) — руны ==========
+  run_1:    'sprites/icons/etc/BTN_etc_fire_rune_i00.png',
+  run_2:    'sprites/icons/etc/BTN_etc_fire_stone_i00.png',
+  run_3:    'sprites/icons/etc/BTN_etc_holy_crystal_1_i00.png',
+  run_4:    'sprites/icons/etc/BTN_etc_holy_grail_i00.png',
+  run_ult:  'sprites/icons/etc/BTN_etc_holy_grail_i03.png',
+
+  // ========== СПИРМЕН (sto) — тяжёлый воин ==========
+  sto_1:    'sprites/icons/etc/BTN_etc_arrowhead_i01.png',
+  sto_2:    'sprites/icons/etc/BTN_etc_arrowhead_i02.png',
+  sto_3:    'sprites/icons/etc/BTN_etc_orcish_arrow_i00.png',
+  sto_4:    'sprites/icons/etc/BTN_etc_beast_soul_shot_i00.png',
+  sto_ult:  'sprites/icons/etc/BTN_etc_destory_soul_arrow_i00.png',
+
+  // ========== ЗВЕРИНЫЙ ВОЖДЬ (bea) — командование ==========
+  bea_1:    'sprites/icons/etc/BTN_etc_beast_spirit_shot_i00.png',
+  bea_2:    'sprites/icons/etc/BTN_etc_blessed_beast_spirit_shot_i00.png',
+  bea_3:    'sprites/icons/etc/BTN_etc_beast_soul_shot_i00.png',
+  bea_4:    'sprites/icons/etc/BTN_etc_soulshot_none_for_rookie_i00.png',
+  bea_ult:  'sprites/icons/etc/BTN_etc_spell_shot_gold_i00.png'
+};
+
+function getSkillIcon(skillId) {
+  return SKILL_ICONS[skillId] || null;
+}
+
+window.SkillIcons = {
+  SKILL_ICONS,
+  getSkillIcon
+};

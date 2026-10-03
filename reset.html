@@ -1,0 +1,9 @@
+<!DOCTYPE html>
+<html><body style="background:#1a1410;color:#e8b84a;font-family:Georgia;padding:40px;text-align:center">
+<h1>Сохранение удалено</h1>
+<p><a href="game.html" style="color:#ffd700;font-size:18px">Открыть игру заново</a></p>
+<script>
+localStorage.removeItem('veilan_save_v1');
+document.write('<p>localStorage: ' + (localStorage.getItem('veilan_save_v1') ? 'есть' : 'пусто') + '</p>');
+</script>
+</body></html>

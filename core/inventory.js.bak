@@ -1,0 +1,509 @@
+// ============================================================
+// ВЕЙЛАН — ИНВЕНТАРЬ (сумка, экипировка, прочность)
+// Версия 1.0 — с uid, заточкой и камнями
+// ============================================================
+
+const MAX_INVENTORY_SLOTS = 30;
+
+// ============================================================
+// СУМКА — БАЗОВЫЕ ОПЕРАЦИИ
+// ============================================================
+
+function getInventory() {
+  if (!window.STATE || !window.STATE.inventory) return [];
+  return window.STATE.inventory;
+}
+
+// Найти слот по uid
+function findByUid(uid) {
+  if (!uid) return null;
+  const inv = getInventory();
+  const item = inv.find(s => s.uid === uid);
+  if (!item) return null;
+  return { slot: item, index: inv.indexOf(item) };
+}
+
+// Найти слот по itemId (первый попавшийся)
+function findSlot(itemId) {
+  const inv = getInventory();
+  return inv.findIndex(s => s.itemId === itemId);
+}
+
+function hasItem(itemId, count) {
+  const needed = count || 1;
+  return countItem(itemId) >= needed;
+}
+
+function countItem(itemId) {
+  const inv = getInventory();
+  let total = 0;
+  for (const slot of inv) {
+    if (slot.itemId === itemId) total += slot.quantity;
+  }
+  return total;
+}
+
+function freeSlots() {
+  return MAX_INVENTORY_SLOTS - getInventory().length;
+}
+
+// ============================================================
+// ДОБАВЛЕНИЕ
+// ============================================================
+
+function addToInventory(itemId, quantity) {
+  const item = ITEMS[itemId];
+  if (!item) return { added: 0, dropped: quantity || 1, reason: 'item_not_found' };
+
+  const qty = quantity || 1;
+  const inv = getInventory();
+  const maxStack = item.stack || 1;
+
+  // Расходники, материалы, осколки, книги — стакаются
+  // Оружие, броня, аксессуары — каждый экземпляр отдельно
+  const isStackable = maxStack > 1;
+
+  let remaining = qty;
+  let added = 0;
+
+  if (isStackable) {
+    // Пытаемся доложить в существующие стаки
+    for (const slot of inv) {
+      if (slot.itemId !== itemId) continue;
+      if (slot.quantity >= maxStack) continue;
+      const space = maxStack - slot.quantity;
+      const toAdd = Math.min(space, remaining);
+      slot.quantity += toAdd;
+      remaining -= toAdd;
+      added += toAdd;
+      if (remaining <= 0) break;
+    }
+  }
+
+  // Создаём новые слоты
+  while (remaining > 0) {
+    if (inv.length >= MAX_INVENTORY_SLOTS) break;
+    const toAdd = isStackable ? Math.min(maxStack, remaining) : 1;
+
+    const newSlot = {
+      uid: Save.getNextUid(),
+      itemId: itemId,
+      quantity: toAdd
+    };
+
+    // Для экипировки — прочность, заточка, камни
+    if (item.durability) {
+      newSlot.durability = item.durability;
+      newSlot.enhancement = 0;
+      newSlot.gems = [null, null, null];
+    }
+
+    inv.push(newSlot);
+    added += toAdd;
+    remaining -= toAdd;
+  }
+
+  if (window.STATE && window.STATE.stats && added > 0) {
+    window.STATE.stats.itemsFound += added;
+  }
+
+  return { added, dropped: remaining, reason: remaining > 0 ? 'inventory_full' : null };
+}
+
+// ============================================================
+// УДАЛЕНИЕ
+// ============================================================
+
+function removeFromInventory(itemId, quantity) {
+  const qty = quantity || 1;
+  const inv = getInventory();
+  let remaining = qty;
+
+  for (let i = inv.length - 1; i >= 0; i--) {
+    if (inv[i].itemId !== itemId) continue;
+    const take = Math.min(inv[i].quantity, remaining);
+    inv[i].quantity -= take;
+    remaining -= take;
+    if (inv[i].quantity <= 0) inv.splice(i, 1);
+    if (remaining <= 0) break;
+  }
+
+  return qty - remaining;
+}
+
+// Удалить предмет по uid (для экипировки)
+function removeByUid(uid) {
+  const inv = getInventory();
+  const idx = inv.findIndex(s => s.uid === uid);
+  if (idx === -1) return false;
+  inv.splice(idx, 1);
+  return true;
+}
+
+// ============================================================
+// СПИСОК
+// ============================================================
+
+function getInventoryList() {
+  return getInventory().map((slot, index) => ({
+    index: index,
+    uid: slot.uid,
+    itemId: slot.itemId,
+    item: ITEMS[slot.itemId],
+    quantity: slot.quantity,
+    durability: slot.durability,
+    enhancement: slot.enhancement || 0,
+    gems: slot.gems || [null, null, null]
+  }));
+}
+
+// ============================================================
+// ЭКИПИРОВКА
+// ============================================================
+
+const EQUIP_SLOTS = ['weapon', 'chest', 'helmet', 'legs', 'cloak', 'ring1', 'ring2', 'amulet', 'belt'];
+
+// Надеть предмет из сумки (по индексу)
+function equipItem(index) {
+  const inv = getInventory();
+  const slot = inv[index];
+  if (!slot) return { ok: false, reason: 'Слот не найден' };
+
+  const item = ITEMS[slot.itemId];
+  if (!item) return { ok: false, reason: 'Предмет не найден' };
+
+  if (!canEquipItem(item)) {
+    return { ok: false, reason: 'Нельзя надеть этот предмет' };
+  }
+
+  // Кольца — два слота
+  let targetSlot = item.slot;
+  if (targetSlot === 'ring1') {
+    if (!window.STATE.equipped.ring1) {
+      targetSlot = 'ring1';
+    } else if (!window.STATE.equipped.ring2) {
+      targetSlot = 'ring2';
+    } else {
+      targetSlot = 'ring1';
+    }
+  }
+
+  // Снять старое (если есть) — вернуть в сумку как объект
+  const oldEquipped = window.STATE.equipped[targetSlot];
+  if (oldEquipped) {
+    // oldEquipped — это объект { uid, itemId, ... }
+    // Кладём обратно в сумку
+    inv.push(oldEquipped);
+  }
+
+  // Надеваем — сохраняем ОБЪЕКТ целиком
+  window.STATE.equipped[targetSlot] = {
+    uid: slot.uid,
+    itemId: slot.itemId,
+    quantity: 1,
+    durability: slot.durability,
+    enhancement: slot.enhancement || 0,
+    gems: slot.gems || [null, null, null]
+  };
+
+  // Убираем предмет из сумки
+  inv.splice(index, 1);
+
+  // Пересчитываем статы
+  if (window.STATE.hero) Hero.recalcHeroStats(window.STATE.hero, false);
+
+  return { ok: true, slot: targetSlot, uid: slot.uid };
+}
+
+// Снять предмет (по имени слота)
+function unequipItem(slotName) {
+  if (!window.STATE || !window.STATE.equipped) return { ok: false };
+  const equippedItem = window.STATE.equipped[slotName];
+  if (!equippedItem) return { ok: false, reason: 'Слот пуст' };
+
+  // Кладём объект обратно в сумку
+  getInventory().push(equippedItem);
+  window.STATE.equipped[slotName] = null;
+
+  if (window.STATE.hero) Hero.recalcHeroStats(window.STATE.hero, false);
+
+  return { ok: true };
+}
+
+// Проверка: можно ли надеть
+function canEquipItem(item) {
+  if (!item) return false;
+  const hero = window.STATE && window.STATE.hero;
+  if (!hero) return false;
+
+  if (item.levelReq && hero.level < item.levelReq) return false;
+
+  if (item.classReq && item.classReq.length > 0) {
+    if (!item.classReq.includes(hero.classId)) return false;
+  }
+
+  return true;
+}
+
+// Получить объект предмета, надетого в слоте (с прочностью и заточкой)
+function getEquippedItem(slotName) {
+  if (!window.STATE || !window.STATE.equipped) return null;
+  const equippedItem = window.STATE.equipped[slotName];
+  if (!equippedItem) return null;
+  // Теперь equipped хранит объект целиком
+  const item = ITEMS[equippedItem.itemId];
+  if (!item) return null;
+  return {
+    slot: slotName,
+    uid: equippedItem.uid,
+    itemId: equippedItem.itemId,
+    item: item,
+    durability: equippedItem.durability,
+    enhancement: equippedItem.enhancement || 0,
+    gems: equippedItem.gems || [null, null, null]
+  };
+}
+
+// Устаревшая функция (оставим для совместимости)
+function getEquippedInSlot(slotName) {
+  const eq = getEquippedItem(slotName);
+  return eq ? eq.item : null;
+}
+
+// ============================================================
+// ПРОЧНОСТЬ
+// ============================================================
+
+// Нанести урон прочности (для экипированного предмета)
+function damageDurability(slotName, hits) {
+  if (!window.STATE || !window.STATE.equipped) return;
+  const equippedItem = window.STATE.equipped[slotName];
+  if (!equippedItem) return;
+  const item = ITEMS[equippedItem.itemId];
+  if (!item || !item.durability) return;
+
+  if (equippedItem.durability === undefined) equippedItem.durability = item.durability;
+
+  const hitsPerPoint = CONFIG.economy.durabilityPerHits;
+  const loss = Math.floor((hits || 1) / hitsPerPoint);
+  if (loss > 0) {
+    equippedItem.durability = Math.max(0, equippedItem.durability - loss);
+  }
+}
+
+// Текущая прочность
+function getDurability(slotName) {
+  const eq = getEquippedItem(slotName);
+  if (!eq) return null;
+  if (eq.durability === undefined) {
+    const item = ITEMS[eq.itemId];
+    return item ? item.durability : null;
+  }
+  return eq.durability;
+}
+
+function isBroken(slotName) {
+  const cur = getDurability(slotName);
+  return cur !== null && cur <= 0;
+}
+
+function repairItem(slotName) {
+  if (!window.STATE || !window.STATE.hero) return { ok: false };
+  const eq = getEquippedItem(slotName);
+  if (!eq) return { ok: false, reason: 'Слот пуст' };
+  const item = ITEMS[eq.itemId];
+  if (!item || !item.durability) return { ok: false, reason: 'Не требует ремонта' };
+
+  const cur = getDurability(slotName);
+  const max = item.durability;
+  const need = max - cur;
+  if (need <= 0) return { ok: false, reason: 'Уже в порядке' };
+
+  const cost = need * CONFIG.economy.repairCostPerPoint;
+  if (window.STATE.hero.gold < cost) return { ok: false, reason: 'Не хватает золота', cost };
+
+  window.STATE.equipped[slotName].durability = max;
+
+  window.STATE.hero.gold -= cost;
+  if (window.STATE.stats) window.STATE.stats.goldSpent += cost;
+
+  return { ok: true, cost, restored: need };
+}
+
+function getDurabilityPct(slotName) {
+  const cur = getDurability(slotName);
+  if (cur === null) return 100;
+  const eq = getEquippedItem(slotName);
+  const item = eq ? ITEMS[eq.itemId] : null;
+  if (!item || !item.durability) return 100;
+  return Math.round((cur / item.durability) * 100);
+}
+
+// ============================================================
+// ИСПОЛЬЗОВАНИЕ РАСХОДНИКОВ
+// ============================================================
+
+function useItem(itemId) {
+  const hero = window.STATE && window.STATE.hero;
+  if (!hero) return { ok: false, reason: 'Героя нет' };
+
+  const item = ITEMS[itemId];
+  if (!item || item.type !== 'consumable') return { ok: false, reason: 'Это нельзя использовать' };
+  if (!hasItem(itemId, 1)) return { ok: false, reason: 'Нет в сумке' };
+
+  const eff = item.effect || {};
+  let log = [];
+
+  if (eff.hpPct) {
+    const heal = Math.floor(hero.maxHp * eff.hpPct);
+    const actual = Hero.healHero(hero, heal);
+    log.push('HP +' + actual);
+    if (window.SFX && actual > 0) SFX.play('heal');
+  }
+  if (eff.mpPct) {
+    const heal = Math.floor(hero.maxMp * eff.mpPct);
+    const actual = Math.min(heal, hero.maxMp - hero.mp);
+    hero.mp += actual;
+    log.push('MP +' + actual);
+  }
+  if (eff.spFlat) {
+    const heal = Math.min(eff.spFlat, hero.maxSp - hero.sp);
+    hero.sp += heal;
+    log.push('SP +' + heal);
+  }
+  if (eff.teleport) {
+    hero.position = { zoneId: 'camp', subId: 'ash' };
+    log.push('Возврат в город');
+  }
+
+  // === ПОСТОЯННЫЕ БАФЫ (свитки тайного ремесла) ===
+  if (eff.permanent && window.Permanent && Permanent.applyPermanent) {
+    var permStats = Object.keys(eff.permanent);
+    if (permStats.length === 0) {
+      return { ok: false, reason: 'Свиток пуст' };
+    }
+    // Проверка: все статы валидны
+    for (var pi = 0; pi < permStats.length; pi++) {
+      var ps = permStats[pi];
+      if (Permanent.ALLOWED.indexOf(ps) === -1) {
+        return { ok: false, reason: 'Неизвестный стат: ' + ps };
+      }
+    }
+    // Применяем
+    var applied = [];
+    for (var pi2 = 0; pi2 < permStats.length; pi2++) {
+      var ps2 = permStats[pi2];
+      var pv = eff.permanent[ps2];
+      var res = Permanent.applyPermanent(hero, ps2, pv);
+      if (res.ok) {
+        applied.push(ps2.toUpperCase() + ' +' + pv);
+      }
+    }
+    if (applied.length > 0) {
+      log.push('НАВСЕГДА: ' + applied.join(', '));
+      // Записываем свиток как прочитанный — больше не появится
+      if (window.Secrets && Secrets.markScrollConsumed) {
+        Secrets.markScrollConsumed(hero, itemId);
+      }
+    } else {
+      return { ok: false, reason: 'Не удалось применить' };
+    }
+  }
+
+  removeFromInventory(itemId, 1);
+  return { ok: true, log };
+}
+
+// ============================================================
+// ПРОДАЖА / ПОКУПКА
+// ============================================================
+
+function sellItem(itemId, quantity) {
+  const hero = window.STATE && window.STATE.hero;
+  if (!hero) return { ok: false };
+  const item = ITEMS[itemId];
+  if (!item || !item.cost) return { ok: false, reason: 'Нельзя продать' };
+
+  const qty = quantity || 1;
+  if (!hasItem(itemId, qty)) return { ok: false, reason: 'Не хватает предметов' };
+
+  const totalPrice = getSellPrice(item) * qty;
+  hero.gold += totalPrice;
+  removeFromInventory(itemId, qty);
+
+  if (window.STATE.stats) {
+    window.STATE.stats.goldEarned += totalPrice;
+    window.STATE.stats.itemsSold += qty;
+  }
+  return { ok: true, gold: totalPrice };
+}
+
+function buyItem(itemId, quantity) {
+  const hero = window.STATE && window.STATE.hero;
+  if (!hero) return { ok: false };
+  const item = ITEMS[itemId];
+  if (!item || !item.cost) return { ok: false, reason: 'Нельзя купить' };
+
+  const qty = quantity || 1;
+  const total = item.cost * qty;
+  if (hero.gold < total) return { ok: false, reason: 'Не хватает золота', need: total };
+
+  const result = addToInventory(itemId, qty);
+  if (result.added < qty) {
+    hero.gold -= item.cost * result.added;
+    return { ok: false, reason: 'Сумка переполнена', added: result.added };
+  }
+  hero.gold -= total;
+  if (window.STATE.stats) window.STATE.stats.goldSpent += total;
+  return { ok: true, gold: total };
+}
+
+// ============================================================
+// СОРТИРОВКА
+// ============================================================
+
+function sortInventory() {
+  const inv = getInventory();
+  const order = { consumable: 0, weapon: 1, armor: 2, accessory: 3, shard: 4, material: 5, book: 6 };
+  inv.sort((a, b) => {
+    const ia = ITEMS[a.itemId], ib = ITEMS[b.itemId];
+    const oa = (ia && order[ia.type]) || 99;
+    const ob = (ib && order[ib.type]) || 99;
+    if (oa !== ob) return oa - ob;
+    return a.itemId.localeCompare(b.itemId);
+  });
+  return true;
+}
+
+// ============================================================
+// ЭКСПОРТ
+// ============================================================
+
+window.Inventory = {
+  MAX_INVENTORY_SLOTS,
+  EQUIP_SLOTS,
+  getInventory,
+  findByUid,
+  findSlot,
+  hasItem,
+  countItem,
+  freeSlots,
+  addToInventory,
+  removeFromInventory,
+  removeByUid,
+  getInventoryList,
+  equipItem,
+  unequipItem,
+  canEquipItem,
+  getEquippedItem,
+  getEquippedInSlot,
+  damageDurability,
+  getDurability,
+  isBroken,
+  repairItem,
+  getDurabilityPct,
+  useItem,
+  sellItem,
+  buyItem,
+  sortInventory
+};

@@ -1,0 +1,21 @@
+const ITEMS = Object.assign({}, ITEMS_WEAPON, ITEMS_ARMOR, ITEMS_MISC, ITEMS_SECRET, ITEMS_TIER8);
+
+function getItem(id) { return ITEMS[id] || null; }
+function getItemsByType(type) { return Object.values(ITEMS).filter(i => i.type === type); }
+function getItemsBySlot(slot) { return Object.values(ITEMS).filter(i => i.slot === slot); }
+function getItemsForLevel(level) { return Object.values(ITEMS).filter(i => i.levelReq && i.levelReq <= level); }
+function rollLoot(lootTable, dropBonus = 0) {
+  const drops = [];
+  for (const entry of lootTable) {
+    const roll = Math.random();
+    const chance = entry.chance + (entry.chance * dropBonus);
+    if (roll < chance) drops.push({ itemId: entry.itemId, quantity: entry.quantity || 1 });
+  }
+  return drops;
+}
+function getSellPrice(item) { return Math.floor((item.cost || 0) * 0.25); }
+function canEquip(hero, item) {
+  if (!item.classReq || item.classReq.length === 0) return true;
+  return item.classReq.includes(hero.classId);
+}
+function meetsLevelReq(hero, item) { return hero.level >= (item.levelReq || 1); }

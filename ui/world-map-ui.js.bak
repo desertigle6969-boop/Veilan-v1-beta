@@ -1,0 +1,107 @@
+// ============================================================
+// ВЕЙЛАН — КАРТА МИРА (вкладка "Карта")
+// title.png на весь экран + кликабельные точки зон
+// ============================================================
+
+// Точки зон (координаты в % от размеров картинки)
+// Пока пусто — заполним после калибровки через режим ловли
+window.WORLD_MAP_POINTS = [
+  { zoneId: 'camp',     name: 'Лагерь',        x: 82.3, y: 61.8 },
+  { zoneId: 'forest',   name: 'Лес',           x: 77.8, y: 78.2 },
+  { zoneId: 'mines',    name: 'Рудники',       x: 27.6, y: 81.5 },
+  { zoneId: 'ruins',    name: 'Руины',         x: 38.6, y: 61.6 },
+  { zoneId: 'temple',   name: 'Храм Мора',     x: 19.1, y: 53.4 },
+  { zoneId: 'peaks',    name: 'Пики Хлада',    x: 37.1, y: 36.5 },
+  { zoneId: 'forges',   name: 'Чёрная Гора',   x: 26.4, y: 25.1 },
+  { zoneId: 'swamp',    name: 'Топи',          x: 41.3, y: 18.3 },
+  { zoneId: 'bridge',   name: 'Мост Ветров',   x: 69.9, y: 19.9 },
+  { zoneId: 'rift',     name: 'Разлом Бездны', x: 53.5, y: 32.5 },
+  { zoneId: 'fortress', name: 'Крепость Тэрна',x: 69.6, y: 72.6 },
+  { zoneId: 'heart',    name: 'Храм Душ',      x: 27.0, y: 71.6 }
+];
+
+function renderWorldMapTab(screen) {
+  // Контейнер карты
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative;width:100%;height:100%;overflow:hidden;background:#000;';
+
+  var img = document.createElement('img');
+  img.src = 'sprites/backgrounds/title.png';
+  img.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;object-fit:cover;';
+  img.draggable = false;
+  wrap.appendChild(img);
+
+  // Точки зон
+  var self = this;
+  window.WORLD_MAP_POINTS.forEach(function(p) {
+    var dot = document.createElement('div');
+    dot.style.cssText = 'position:absolute;left:' + p.x + '%;top:' + p.y + '%;' +
+      'width:22px;height:22px;margin-left:-11px;margin-top:-11px;' +
+      'border-radius:50%;background:rgba(232,184,74,0.85);' +
+      'border:2px solid #fff;box-shadow:0 0 8px rgba(232,184,74,0.8);' +
+      'cursor:pointer;transition:transform 0.15s;';
+    dot.title = p.name || p.zoneId;
+    dot.onclick = function() {
+      if (p.zoneId && window.openZone) {
+        window.openZone(p.zoneId);
+      } else if (window.Toast) {
+        Toast.info((p.name || p.zoneId) + ' (зона не привязана)');
+      }
+    };
+    dot.onmouseenter = function() { dot.style.transform = 'scale(1.3)'; };
+    dot.onmouseleave = function() { dot.style.transform = 'scale(1)'; };
+    wrap.appendChild(dot);
+  });
+
+  // Подсказка сверху
+  var tip = document.createElement('div');
+  tip.style.cssText = 'position:absolute;top:8px;left:8px;right:8px;' +
+    'padding:8px 12px;background:rgba(3,5,8,0.7);' +
+    'border:1px solid rgba(232,184,74,0.5);border-radius:4px;' +
+    'color:#e8b84a;font-size:12px;text-align:center;';
+  if (window.WORLD_MAP_POINTS.length === 0) {
+    tip.textContent = 'Карта Вейлана. Точки зон ещё не откалиброваны.';
+  } else {
+    tip.textContent = 'Тапни по точке, чтобы перейти в зону.';
+  }
+  wrap.appendChild(tip);
+
+
+  screen.appendChild(wrap);
+}
+
+// ============================================================
+// РЕЖИМ КАЛИБРОВКИ
+// Тапаешь по карте — в Toast появляются координаты в %
+// Записываешь их и присылаешь мне
+// ============================================================
+
+function startCalibration(wrap, img) {
+  if (window.Toast) Toast.info('Режим калибровки. Тапай по точкам зон. Координаты появятся внизу.');
+
+  // Панель с логом
+  var log = document.createElement('div');
+  log.style.cssText = 'position:absolute;bottom:0;left:0;right:0;max-height:40%;' +
+    'overflow-y:auto;background:rgba(0,0,0,0.9);color:#e8b84a;' +
+    'font-family:monospace;font-size:11px;padding:8px;border-top:2px solid #e8b84a;';
+  log.textContent = 'Координаты (тап по карте):\n';
+  wrap.appendChild(log);
+
+  var counter = 1;
+  wrap.onclick = function(e) {
+    // Игнорируем клики по кнопкам/логу
+    if (e.target === log || log.contains(e.target)) return;
+    if (e.target.tagName === 'BUTTON') return;
+
+    var rect = img.getBoundingClientRect();
+    var x = ((e.clientX - rect.left) / rect.width * 100).toFixed(1);
+    var y = ((e.clientY - rect.top) / rect.height * 100).toFixed(1);
+
+    log.textContent += counter + ': x=' + x + ', y=' + y + '\n';
+    log.scrollTop = log.scrollHeight;
+    counter++;
+  };
+}
+
+window.renderWorldMapTab = renderWorldMapTab;
+console.log('[world-map-ui] модуль загружен');

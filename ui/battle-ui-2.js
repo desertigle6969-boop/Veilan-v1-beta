@@ -1,0 +1,720 @@
+// ============================================================
+// ВЕЙЛАН — БОЕВОЙ ИНТЕРФЕЙС (Часть 2)
+// Обработка действий, ИИ-ходы, победа/поражение
+// ============================================================
+
+(function() {
+
+  if (!window.BattleUI) {
+    console.error('battle-ui-2: BattleUI не найден, загрузите Часть 1 первой');
+    return;
+  }
+
+  var B = window.BattleUI;
+
+  // Защита от двойного тапа
+  B.processing = false;
+
+  // ============================================================
+  // ГЛАВНЫЙ РОУТЕР ДЕЙСТВИЙ
+  // ============================================================
+
+  function handleAction(actionId) {
+    if (B.processing) return;
+    var battle = B.battle;
+    if (!battle || battle.status !== 'active') return;
+
+    var current = Combat.findUnit(battle, battle.currentUnitId);
+    if (!current || !current.isHero || current.hp <= 0) {
+      Toast.bad('Сейчас не твой ход');
+      return;
+    }
+
+    if (actionId === 'attack')  return doAttack(battle);
+    if (actionId === 'skill')   return openSkillPanel(battle);
+    if (actionId === 'item')    return openItemPanel(battle);
+    if (actionId === 'defend')  return doDefend(battle);
+    if (actionId === 'flee')    return doFlee(battle);
+  }
+
+  // ============================================================
+  // АТАКА
+  // ============================================================
+
+  function doAttack(battle) {
+    if (!B.selectedTargetId) {
+      Toast.bad('Сначала выбери цель');
+      return;
+    }
+    var target = Combat.findUnit(battle, B.selectedTargetId);
+    if (!target || target.hp <= 0) {
+      Toast.bad('Цель недоступна');
+      B.selectedTargetId = null;
+      B.render();
+      return;
+    }
+
+    B.processing = true;
+    var r = Combat.heroAttack(battle, B.selectedTargetId);
+    B.processing = false;
+
+    if (r && r.ok === false && r.reason) {
+      Toast.bad(r.reason);
+    }
+    B.selectedTargetId = null;
+    afterHeroAction(battle);
+  }
+
+  // ============================================================
+  // ЗАЩИТА
+  // ============================================================
+
+  function doDefend(battle) {
+    B.processing = true;
+    Combat.heroDefend(battle);
+    B.processing = false;
+    afterHeroAction(battle);
+  }
+
+  // ============================================================
+  // ПОБЕГ / СДАТЬСЯ
+  // ============================================================
+
+  function doFlee(battle) {
+    if (battle.isBoss) {
+      Toast.bad('От босса не убежать!');
+      return;
+    }
+    B.processing = true;
+    var r = Combat.heroFlee(battle);
+    B.processing = false;
+
+    if (r && r.fled) {
+      Toast.info('Ты покинул бой');
+    } else if (r && r.failed) {
+      Toast.bad('Побег не удался!');
+    }
+
+    if (battle.status === 'fled') {
+      B.render();
+      onBattleEnd('fled');
+      return;
+    }
+    afterHeroAction(battle);
+  }
+
+  // ============================================================
+  // ПАНЕЛЬ СКИЛЛОВ
+  // ============================================================
+
+  function openSkillPanel(battle) {
+    var heroUnit = Combat.getHeroUnit(battle);
+    if (!heroUnit || !heroUnit.ref) return;
+
+    var hero = heroUnit.ref;
+    var skillIds = (hero.skillIds || hero.skills || []).slice();
+
+    if (skillIds.length === 0) {
+      Toast.info('Нет доступных скиллов');
+      return;
+    }
+
+    // ЗВУК ОТКРЫТИЯ ПАНЕЛИ СКИЛЛОВ
+    if (window.SFX) SFX.play('cast_start');
+
+    var container = document.createElement('div');
+
+    skillIds.forEach(function(sid) {
+      var sk = (typeof SKILLS !== 'undefined') ? SKILLS[sid] : null;
+      if (!sk) return;
+
+      var cd = (hero.skillCooldowns && hero.skillCooldowns[sid]) || 0;
+      var mpCost = (sk.cost && sk.cost.mp) || 0;
+      var spCost = (sk.cost && sk.cost.sp) || 0;
+      var canUse = cd === 0 && heroUnit.mp >= mpCost && heroUnit.sp >= spCost;
+
+      var row = document.createElement('div');
+      row.style.cssText =
+        'padding:8px;border:1px solid #3a2a18;border-radius:4px;margin-bottom:6px;' +
+        (canUse ? 'cursor:pointer;background:rgba(30,20,50,0.6);' : 'opacity:0.4;background:rgba(20,15,20,0.6);');
+
+      var titleRow = document.createElement('div');
+      titleRow.style.cssText = 'display:flex;align-items:center;gap:8px;';
+
+      // Иконка скилла
+      var iconBox = document.createElement('div');
+      iconBox.style.cssText =
+        'width:32px;height:32px;background:rgba(10,8,5,0.8);' +
+        'border:1px solid #4a3a1e;border-radius:3px;' +
+        'display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+      var iconPath = (window.SkillIcons && SkillIcons.getSkillIcon) ? SkillIcons.getSkillIcon(sid) : null;
+      if (iconPath) {
+        iconBox.innerHTML = '<img src="' + iconPath + '" style="width:80%;height:80%;object-fit:contain;image-rendering:pixelated;">';
+      } else {
+        iconBox.innerHTML = '<span style="color:#8a7a5a;font-size:12px;">?</span>';
+      }
+      titleRow.appendChild(iconBox);
+
+      var title = document.createElement('div');
+      title.style.cssText = 'color:#c090e0;font-weight:bold;font-size:13px;';
+      title.textContent = sk.name || sid;
+      titleRow.appendChild(title);
+
+      row.appendChild(titleRow);
+
+      var meta = document.createElement('div');
+      meta.style.cssText = 'font-size:11px;color:#8a7a5a;margin-top:2px;';
+      var parts = [];
+      if (mpCost > 0) parts.push('MP ' + mpCost);
+      if (spCost > 0) parts.push('SP ' + spCost);
+      if (cd > 0) parts.push('КД ' + cd);
+      if (sk.target) parts.push('цель: ' + sk.target);
+      meta.textContent = parts.join(' | ');
+      row.appendChild(meta);
+
+      if (sk.desc) {
+        var desc = document.createElement('div');
+        desc.style.cssText = 'font-size:11px;color:#a89878;margin-top:4px;line-height:1.4;';
+        desc.textContent = sk.desc;
+        row.appendChild(desc);
+      }
+
+      if (canUse) {
+        row.onclick = function() {
+          if (window.SFX && SFX.cache && SFX.cache['cast_start']) {
+            try { SFX.cache['cast_start'].pause(); SFX.cache['cast_start'].currentTime = 0; } catch (e) {}
+          }
+          Modal.close();
+          doSkill(battle, sid, sk);
+        };
+      }
+
+      container.appendChild(row);
+    });
+
+    Modal.open({
+      title: 'Скиллы',
+      content: container,
+      buttons: [{
+        text: 'Отмена',
+        type: 'default',
+        onClick: function() {
+          // СТОП КАСТА при закрытии панели
+          if (window.SFX && SFX.cache && SFX.cache['cast_start']) {
+            try {
+              SFX.cache['cast_start'].pause();
+              SFX.cache['cast_start'].currentTime = 0;
+            } catch (e) {}
+          }
+        }
+      }]
+    });
+  }
+
+  function doSkill(battle, skillId, skill) {
+    // Определяем цель
+    var targetId = null;
+    var tType = skill.target || 'enemy';
+
+    // Определяем цель
+    if (tType === 'self' || tType === 'ally' || tType === 'all_ally' || tType === 'all_allies') {
+      // Союзник — герой (у нас партия из 1)
+      targetId = battle.playerUnits[0].unitId;
+    } else if (tType === 'enemy' || tType === 'all_enemy' || tType === 'all_enemies') {
+      if (!B.selectedTargetId) {
+        Toast.bad('Сначала выбери цель');
+        return;
+      }
+      targetId = B.selectedTargetId;
+    } else {
+      targetId = B.selectedTargetId || null;
+    }
+
+    B.processing = true;
+    var r = Combat.heroSkill(battle, skillId, targetId);
+    B.processing = false;
+
+    if (r && r.ok === false && r.reason) {
+      Toast.bad(r.reason);
+      return;
+    }
+    B.selectedTargetId = null;
+    afterHeroAction(battle);
+  }
+
+  // ============================================================
+  // ПАНЕЛЬ ПРЕДМЕТОВ (расходники)
+  // ============================================================
+
+  function openItemPanel(battle) {
+    var items = window.Inventory && Inventory.getConsumables
+      ? Inventory.getConsumables()
+      : [];
+
+    // Fallback: если нет метода — берём из STATE.inventory вручную
+    if (items.length === 0 && window.STATE && STATE.inventory) {
+      for (var i = 0; i < STATE.inventory.length; i++) {
+        var slot = STATE.inventory[i];
+        if (!slot) continue;
+        var it = ITEMS[slot.itemId];
+        if (it && it.type === 'consumable') {
+          // Еда в бою не работает
+          if (slot.itemId && slot.itemId.indexOf('food_') === 0) continue;
+          items.push(slot);
+        }
+      }
+    }
+
+    // Дополнительный фильтр — убираем еду из уже полученного списка
+    items = items.filter(function(slot) {
+      return !(slot.itemId && slot.itemId.indexOf('food_') === 0);
+    });
+
+    var container = document.createElement('div');
+
+    if (items.length === 0) {
+      container.innerHTML = '<div style="color:#8a7a5a;padding:8px;">Нет расходников</div>';
+    } else {
+      items.forEach(function(slot) {
+        var it = ITEMS[slot.itemId];
+        if (!it) return;
+        var qty = slot.quantity || 1;
+
+        var row = document.createElement('div');
+        row.style.cssText =
+          'padding:8px;border:1px solid #2a4a2a;border-radius:4px;margin-bottom:6px;' +
+          'cursor:pointer;background:rgba(15,30,15,0.6);';
+
+        var title = document.createElement('div');
+        title.style.cssText = 'color:#7ad07a;font-weight:bold;font-size:13px;';
+        title.textContent = it.name + '  x' + qty;
+        row.appendChild(title);
+
+        if (it.desc) {
+          var desc = document.createElement('div');
+          desc.style.cssText = 'font-size:11px;color:#8a9a7a;margin-top:3px;';
+          desc.textContent = it.desc;
+          row.appendChild(desc);
+        }
+
+        row.onclick = function() {
+          Modal.close();
+          doItem(battle, slot.itemId);
+        };
+        container.appendChild(row);
+      });
+    }
+
+    Modal.open({
+      title: 'Предметы',
+      content: container,
+      buttons: [{ text: 'Отмена', type: 'default' }]
+    });
+  }
+
+  function doItem(battle, itemId) {
+    B.processing = true;
+    var r = Combat.heroItem(battle, itemId);
+    B.processing = false;
+
+    if (r && r.ok === false && r.reason) {
+      Toast.bad(r.reason);
+      return;
+    }
+    if (r && r.fled) {
+      B.render();
+      onBattleEnd('fled');
+      return;
+    }
+    afterHeroAction(battle);
+  }
+
+  // ============================================================
+  // ПОСЛЕ ХОДА ГЕРОЯ: ОТРИСОВКА + ВРАГИ + КОНЕЦ
+  // ============================================================
+
+  function afterHeroAction(battle) {
+    B.render();
+    if (window.Combat && Combat.flushBattleEffects) Combat.flushBattleEffects();
+    if (window.Combat && Combat.flushBattleIcons) Combat.flushBattleIcons();
+
+    if (battle.status !== 'active') {
+      setTimeout(function() { onBattleEnd(battle.status); }, 300);
+      return;
+    }
+
+    setTimeout(function() {
+      try {
+        processEnemyTurns(battle);
+      } catch (e) {
+        console.error('processEnemyTurns error:', e);
+        Toast.bad('Ошибка хода врагов: ' + (e && e.message ? e.message : e));
+      }
+    }, 250);
+  }
+
+  // ============================================================
+  // ХОДЫ ВРАГОВ (пошагово)
+  // ============================================================
+
+  function processEnemyTurns(battle) {
+    if (!battle || battle.status !== 'active') {
+      onBattleEnd(battle ? battle.status : 'unknown');
+      return;
+    }
+
+    var current = Combat.findUnit(battle, battle.currentUnitId);
+
+    // Никого нет — пересчитываем
+    if (!current) {
+      var next = Combat.getNextUnit ? Combat.getNextUnit(battle) : null;
+      current = next;
+    }
+
+    // Если ход снова у героя — выходим, ждём тапа
+    if (current && current.isHero && current.hp > 0) {
+      B.render();
+      return;
+    }
+
+    // Если враг мёртв — пропускаем (без перерисовки, просто двигаем очередь)
+    if (!current || current.hp <= 0) {
+      if (Combat.endTurn) Combat.endTurn(battle, battle.currentUnitId);
+      setTimeout(function() { processEnemyTurns(battle); }, 50);
+      return;
+    }
+
+    // Ход врага
+    B.processing = true;
+    try {
+      Combat.enemyTurn(battle, current);
+    } catch (e) {
+      console.error('enemyTurn error:', e);
+    }
+    B.processing = false;
+
+    B.render();
+
+    if (battle.status !== 'active') {
+      setTimeout(function() { onBattleEnd(battle.status); }, 400);
+      return;
+    }
+
+    // Следующий ход через короткую задержку
+    setTimeout(function() { processEnemyTurns(battle); }, 100);
+  }
+
+  // ============================================================
+  // КОНЕЦ БОЯ
+  // ============================================================
+
+  function onBattleEnd(status) {
+    // Очистить слой значков — иначе они висят поверх панелей победы/поражения
+    var fx = document.getElementById('fx-layer');
+    if (fx) fx.innerHTML = '';
+    var battle = B.battle;
+    if (!battle) return;
+
+    // На случай, если finishBattle не был вызван
+    if (!battle._finished) {
+      try { Combat.finishBattle(battle); } catch (e) { console.error(e); }
+    }
+
+    B.render();
+
+    if (status === 'victory') {
+      showVictoryModal(battle);
+    } else if (status === 'defeat') {
+      showDefeatModal(battle);
+    } else if (status === 'draw') {
+      showDrawModal(battle);
+    } else {
+      // fled / unknown — просто закрываем
+      finalizeClose(status);
+    }
+  }
+
+  // ============================================================
+  // МОДАЛКА ПОБЕДЫ
+  // ============================================================
+
+  function showVictoryModal(battle) {
+    var r = battle.rewards || {};
+    var lines = [];
+
+    lines.push('<div style="color:#e8b84a;font-size:15px;letter-spacing:1px;margin-bottom:10px;">ПОБЕДА</div>');
+
+    if (r.exp > 0)  lines.push('<div style="color:#c090e0;">Опыт: +' + r.exp + '</div>');
+    if (r.gold > 0) lines.push('<div style="color:#e8b84a;">Золото: +' + r.gold + '</div>');
+
+    if (r.drops && r.drops.length > 0) {
+      lines.push('<div style="margin-top:8px;color:#8a7a5a;font-size:11px;">ДОБЫЧА:</div>');
+      r.drops.forEach(function(d) {
+        var it = ITEMS[d.itemId];
+        var nm = it ? it.name : d.itemId;
+        lines.push('<div style="color:#7ad07a;">' + nm + ' x' + d.quantity + '</div>');
+      });
+    }
+
+    if (!r.exp && !r.gold && (!r.drops || r.drops.length === 0)) {
+      lines.push('<div style="color:#8a7a5a;">Наград нет</div>');
+    }
+
+    // Проверка: убит ли финальный босс
+    var killedTurnTrue = battle.enemyUnits && battle.enemyUnits.some(function(e) {
+      return e.mobId === 'turn_true' && e.hp <= 0;
+    });
+
+    if (killedTurnTrue) {
+      Modal.open({
+        title: null,
+        content: lines.join(''),
+        closable: false,
+        buttons: [{
+          text: 'Слушать',
+          type: 'good',
+          onClick: function() {
+            showFinalChoice(battle);
+          }
+        }]
+      });
+      return;
+    }
+
+    Modal.open({
+      title: null,
+      content: lines.join(''),
+      closable: false,
+      buttons: [{
+        text: 'Ок',
+        type: 'good',
+        onClick: function() {
+          Toast.loot('Бой завершён');
+          finalizeClose('victory');
+        }
+      }]
+    });
+  }
+
+  // ============================================================
+  // ФИНАЛЬНАЯ СЦЕНА — ДИАЛОГ ТЭРНА С ОТЦОМ + ТРИ ПУТИ
+  // ============================================================
+
+  function showFinalChoice(battle) {
+    // === МОДАЛКА 1: ДИАЛОГ ТЭРНА С ОТЦОМ ===
+    var fatherText =
+      '<div style="color:#e8b84a;font-size:14px;letter-spacing:1px;margin-bottom:14px;text-align:center;">СВЕТ ГАСНЕТ. ТИШИНА.</div>' +
+      '<div style="color:#d4c8a8;line-height:1.8;font-style:italic;">' +
+      '— Пап.<br><br>' +
+      '— Пап, я дома.<br><br>' +
+      '— Ты помнишь коня? Деревянного? Ты вырезал его мне. Мне было шесть. Я играл с ним каждый вечер. А потом прятал под кровать.<br><br>' +
+      '— Мама его хранила. Сорок лет. Каждый вечер. Она не сказала мне ни слова упрёка. Даже когда я запер её в комнате. Она просто смотрела. И хранила коня.<br><br>' +
+      '— Я не хотел, пап. Я не хотел. Я хотел остановить смерть. Твою. Мамину. Всех. А потом меч заговорил. Он сказал: «Возьми меня или возьми себя». Я взял его. Думал — смогу. Он взял меня.<br><br>' +
+      '— Я помню твои руки. Ты держал молот как мать. Ты говорил: «Металл помнит больше, чем люди». Ты был прав. Меч помнит всё. А я — забыл. Мамино лицо забыл. Только голос. Только руки.<br><br>' +
+      '— Ты меня простишь? Не знаю, слышишь ли ты меня там. Если слышишь — прости. Если не слышишь — я всё равно скажу. Триста лет ждал. Хотя бы сказать.<br><br>' +
+      '— Я иду, пап. Ко всем вам. К маме. К Тетору. К Ольдену. К Нирне. Спасибо, что вырезал мне коня. Я его любил.' +
+      '</div>';
+
+    Modal.open({
+      title: null,
+      content: fatherText,
+      closable: false,
+      buttons: [{
+        text: 'Слушать дальше',
+        type: 'default',
+        onClick: function() {
+          setTimeout(showThreePaths, 200);
+        }
+      }]
+    });
+  }
+
+  // === МОДАЛКА 2: ТРИ ПУТИ ===
+  function showThreePaths() {
+    var text =
+      '<div style="color:#e8b84a;font-size:14px;letter-spacing:1px;margin-bottom:14px;text-align:center;">ТРИ ПУТИ</div>' +
+      '<div style="color:#d4c8a8;line-height:1.8;">' +
+      'Меч Тэрна лежит на полу. Осколки Зари — у тебя. Завеса — порвана. Бездна — ждёт.<br><br>' +
+      'Ты можешь выбрать. Свет. Тьма. Хаос.<br><br>' +
+      'Никто не решит за тебя.' +
+      '</div>';
+
+    Modal.open({
+      title: null,
+      content: text,
+      closable: false,
+      buttons: [
+        {
+          text: 'СОБРАТЬ ОСКОЛКИ',
+          type: 'good',
+          onClick: function() { pickPath('light'); }
+        },
+        {
+          text: 'УНИЧТОЖИТЬ ОСКОЛКИ',
+          type: 'danger',
+          onClick: function() { pickPath('dark'); }
+        },
+        {
+          text: 'ЗАНЯТЬ МЕСТО ТЭРНА',
+          type: 'primary',
+          onClick: function() { pickPath('chaos'); }
+        }
+      ]
+    });
+  }
+
+  // === ВЫБОР ПУТИ ===
+  function pickPath(path) {
+    if (!window.STATE || !STATE.hero) return;
+
+    var pathNames = {
+      light: 'ХРАНИТЕЛЬ ЗАВЕСЫ',
+      dark:  'ГОЛОС БЕЗДНЫ',
+      chaos: 'НОВЫЙ ТЭРН'
+    };
+
+    var finalTexts = {
+      light:
+        '<div style="color:#ffd870;font-size:14px;letter-spacing:1px;margin-bottom:14px;text-align:center;">ПУТЬ СВЕТА</div>' +
+        '<div style="color:#d4c8a8;line-height:1.8;">' +
+        'Ты собираешь осколки. Один за другим. Они тёплые.<br><br>' +
+        'Ты входишь в Завесу. Свет принимает тебя. Ты чувствуешь, как становишься частью — не телом, душой.<br><br>' +
+        'Где-то далеко Хрод говорит: «Он справился». Скáльд кивает. Северин улыбается.<br><br>' +
+        'Ты держишь. Триста лет. Ты будешь держать. И это хорошо.' +
+        '</div>',
+      dark:
+        '<div style="color:#a04ad0;font-size:14px;letter-spacing:1px;margin-bottom:14px;text-align:center;">ПУТЬ ТЬМЫ</div>' +
+        '<div style="color:#d4c8a8;line-height:1.8;">' +
+        'Ты разбиваешь осколки. Один за другим.<br><br>' +
+        'Бездна входит — не быстро, а медленно, как вода в лодку.<br><br>' +
+        'Мир гаснет. Хрод, Скáльд, Северин, Кром, Кари, все — растворяются. Не с криком. С улыбкой. Как дети в огне. Как Тэрн.<br><br>' +
+        'Тишина. Хорошая тишина.' +
+        '</div>',
+      chaos:
+        '<div style="color:#6ad06a;font-size:14px;letter-spacing:1px;margin-bottom:14px;text-align:center;">ПУТЬ ХАОСА</div>' +
+        '<div style="color:#d4c8a8;line-height:1.8;">' +
+        'Ты берёшь меч. Он тёплый. Он твой.<br><br>' +
+        'Ты чувствуешь, как мир вокруг меняется — не разрушается, а складывается заново.<br><br>' +
+        'Ты не Тэрн. Ты не он. Ты — тот, кто решил.<br><br>' +
+        'И это правильно.' +
+        '</div>'
+    };
+
+    STATE.hero.path = path;
+    STATE.hero.title = pathNames[path];
+
+    if (!STATE.hero.titles) STATE.hero.titles = [];
+    if (STATE.hero.titles.indexOf(pathNames[path]) === -1) {
+      STATE.hero.titles.push(pathNames[path]);
+    }
+
+    if (window.Save && Save.saveState) Save.saveState();
+
+    Modal.open({
+      title: null,
+      content: finalTexts[path],
+      closable: false,
+      buttons: [{
+        text: 'Выйти из Храма',
+        type: 'good',
+        onClick: function() {
+          Toast.good('Титул: ' + pathNames[path]);
+          finalizeClose('victory');
+          // Возврат в город
+          if (window.STATE && STATE.hero) {
+            STATE.hero.position = { zoneId: 'bridge', subId: 'platforms' };
+            if (window.Save) Save.saveState();
+            if (window.UI && UI.tab) UI.tab('map');
+          }
+        }
+      }]
+    });
+  }
+
+  // ============================================================
+  // МОДАЛКА ПОРАЖЕНИЯ
+  // ============================================================
+
+  function showDefeatModal(battle) {
+    var container = document.createElement('div');
+    container.innerHTML =
+      '<div style="color:#e0334a;font-size:15px;letter-spacing:1px;margin-bottom:10px;">ТЫ ПОГИБ</div>' +
+      '<div style="color:#d4c8a8;line-height:1.6;">' +
+        'Ты потерял часть опыта и золота.<br>' +
+        'Возрождение произошло в Лагере.' +
+      '</div>';
+
+    Modal.open({
+      title: null,
+      content: container,
+      closable: false,
+      buttons: [{
+        text: 'Ок',
+        type: 'danger',
+        onClick: function() {
+          finalizeClose('defeat');
+        }
+      }]
+    });
+  }
+
+  // ============================================================
+  // МОДАЛКА НИЧЬЕЙ
+  // ============================================================
+
+  function showDrawModal(battle) {
+    Modal.open({
+      title: null,
+      content: '<div style="color:#8a7a5a;">Бой затянулся. Ничья.</div>',
+      closable: false,
+      buttons: [{
+        text: 'Ок',
+        type: 'default',
+        onClick: function() { finalizeClose('draw'); }
+      }]
+    });
+  }
+
+  // ============================================================
+  // ФИНАЛЬНОЕ ЗАКРЫТИЕ
+  // ============================================================
+
+  function finalizeClose(status) {
+    var cb = B.onBattleEnd;
+    var battleId = B.battle ? B.battle.id : null;
+    var rewards = B.battle ? B.battle.rewards : null;
+
+    B.close();
+
+    // Обновляем UI
+    try {
+      if (window.updateStatusBars) updateStatusBars();
+      if (window.updateTopbar) updateTopbar();
+      if (window.Save && Save.saveState) Save.saveState();
+    } catch (e) { console.error(e); }
+
+    if (cb) {
+      try {
+        cb({ status: status, battleId: battleId, rewards: rewards });
+      } catch (e) { console.error('onEnd cb error:', e); }
+    }
+  }
+
+  // ============================================================
+  // ЭКСПОРТ В BATTLEUI
+  // ============================================================
+
+  B.handleAction = handleAction;
+  B.processEnemyTurns = processEnemyTurns;
+  B._doAttack = doAttack;
+  B._doDefend = doDefend;
+  B._doFlee = doFlee;
+  B._doSkill = doSkill;
+  B._doItem = doItem;
+
+  // Переписываем заглушку из Части 1 на реальную реализацию
+  window.handleAction = handleAction;
+
+  console.log('[battle-ui-2] загружен');
+
+})();

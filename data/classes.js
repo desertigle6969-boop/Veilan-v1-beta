@@ -1,0 +1,198 @@
+// ============================================================
+// ВЕЙЛАН — КЛАССЫ (10) + СКИЛЛЫ (по 5 на класс)
+// ============================================================
+
+const CLASSES = {
+
+  // ========== 1. ГВАРДЕЕЦ ==========
+  guardian: {
+    id: 'guardian',
+    name: 'Гвардеец',
+    role: 'Танк',
+    desc: 'Тяжёлая броня, щит, провокация. Держит линию, пока союзники бьют.',
+    lore: 'Имперская гвардия Валдорна — последний бастион Грань-Холда.',
+    sprite: 'guardian',
+    baseStats: { str: 8, dex: 4, con: 10, int: 3, wit: 4, men: 8 },
+    statGrowth: { str: 1.0, dex: 0.5, con: 1.5, int: 0.4, wit: 0.6, men: 1.2 },
+    classBonus: { hpMult: 1.15, defMult: 1.30, atkMult: 0.90, magMult: 0.70, spdMult: 0.85, mpMult: 0.85 },
+    startingGold: 25,
+    skills: ['gua_1', 'gua_2', 'gua_3', 'gua_4', 'gua_ult'],
+    raceReq: ['human']
+  },
+
+  // ========== 2. КЛИНОК БУРИ ==========
+  stormblade: {
+    id: 'stormblade',
+    name: 'Клинок Бури',
+    role: 'Ближний бой / ДД',
+    desc: 'Двуручное оружие, скорость, ярость шторма. Убивает быстро или умирает быстро.',
+    lore: 'Мастера вихревого боя клана Дросс. Их клинки поют, когда рубят.',
+    sprite: 'stormblade',
+    baseStats: { str: 9, dex: 8, con: 6, int: 3, wit: 6, men: 4 },
+    statGrowth: { str: 1.4, dex: 1.2, con: 0.9, int: 0.4, wit: 0.9, men: 0.6 },
+    classBonus: { hpMult: 1.00, defMult: 0.90, atkMult: 1.25, magMult: 0.70, spdMult: 1.15, mpMult: 0.85 },
+    startingGold: 30,
+    skills: ['sto_1', 'sto_2', 'sto_3', 'sto_4', 'sto_ult'],
+    raceReq: ['orc']
+  },
+
+  // ========== 3. ОХОТНИК ТЕНИ ==========
+  shadowhunter: {
+    id: 'shadowhunter',
+    name: 'Охотник Тени',
+    role: 'Дальний бой / ДД',
+    desc: 'Лук, ловушки, яды. Бьёт из темноты, исчезает до того, как его найдут.',
+    lore: 'Леса Вейлана помнят их. Мобы — боятся.',
+    sprite: 'shadowhunter',
+    baseStats: { str: 5, dex: 10, con: 6, int: 4, wit: 8, men: 5 },
+    statGrowth: { str: 0.7, dex: 1.5, con: 0.8, int: 0.5, wit: 1.1, men: 0.7 },
+    classBonus: { hpMult: 0.95, defMult: 0.90, atkMult: 1.15, magMult: 0.80, spdMult: 1.25, mpMult: 0.95 },
+    startingGold: 28,
+    skills: ['sha_1', 'sha_2', 'sha_3', 'sha_4', 'sha_ult'],
+    raceReq: ['human', 'soulless']
+  },
+
+  // ========== 4. ПИРОМАНТ ==========
+  pyromancer: {
+    id: 'pyromancer',
+    name: 'Пиромант',
+    role: 'Магия огня / ДД',
+    desc: 'Огонь, поджоги, массовые взрывы. Сжигает всё — врагов, лес, себя.',
+    lore: 'Выжженные земли Валдорна — их работа. Официально — случайность.',
+    sprite: 'pyromancer',
+    baseStats: { str: 3, dex: 5, con: 5, int: 10, wit: 8, men: 6 },
+    statGrowth: { str: 0.4, dex: 0.7, con: 0.8, int: 1.6, wit: 1.2, men: 0.9 },
+    classBonus: { hpMult: 0.90, defMult: 0.85, atkMult: 0.70, magMult: 1.35, spdMult: 1.00, mpMult: 1.20 },
+    startingGold: 22,
+    skills: ['pyr_1', 'pyr_2', 'pyr_3', 'pyr_4', 'pyr_ult'],
+    raceReq: ['human', 'soulless']
+  },
+
+  // ========== 5. КРИОМАНТ ==========
+  cryomancer: {
+    id: 'cryomancer',
+    name: 'Криомант',
+    role: 'Магия льда / Контроль',
+    desc: 'Лёд, заморозка, щиты. Замедляет бой и превращает его в свою игру.',
+    lore: 'Маги Синклита Аэлвин, закалённые в вечных льдах Пиков Хлада.',
+    sprite: 'cryomancer',
+    baseStats: { str: 3, dex: 6, con: 6, int: 9, wit: 7, men: 8 },
+    statGrowth: { str: 0.4, dex: 0.8, con: 1.0, int: 1.4, wit: 1.0, men: 1.2 },
+    classBonus: { hpMult: 0.95, defMult: 1.00, atkMult: 0.70, magMult: 1.25, spdMult: 1.00, mpMult: 1.25 },
+    startingGold: 24,
+    skills: ['cry_1', 'cry_2', 'cry_3', 'cry_4', 'cry_ult'],
+    raceReq: ['soulless']
+  },
+
+  // ========== 6. ПРОВОДНИК ==========
+  conduit: {
+    id: 'conduit',
+    name: 'Проводник',
+    role: 'Хилер / Поддержка',
+    desc: 'Свет Зари, лечение, очищение. Не даёт упасть — ни тебе, ни надежде.',
+    lore: 'Служители Осколков Зари. Верят, что мир можно исцелить.',
+    sprite: 'conduit',
+    baseStats: { str: 4, dex: 5, con: 7, int: 8, wit: 7, men: 9 },
+    statGrowth: { str: 0.6, dex: 0.7, con: 1.1, int: 1.2, wit: 1.0, men: 1.4 },
+    classBonus: { hpMult: 1.00, defMult: 1.05, atkMult: 0.70, magMult: 1.15, spdMult: 0.95, mpMult: 1.30 },
+    startingGold: 26,
+    skills: ['con_1', 'con_2', 'con_3', 'con_4', 'con_ult'],
+    raceReq: ['human', 'minotaur']
+  },
+
+  // ========== 7. БАРД ВЕТРОВ ==========
+  windbard: {
+    id: 'windbard',
+    name: 'Бард Ветров',
+    role: 'Поддержка / Дебафф',
+    desc: 'Песни войны и мира. Баффы союзникам, проклятия врагам, никакой магии — только голос.',
+    lore: 'Их песни слышны в каждом городе Вейлана. И в каждом логове врага.',
+    sprite: 'windbard',
+    baseStats: { str: 4, dex: 7, con: 6, int: 7, wit: 9, men: 7 },
+    statGrowth: { str: 0.5, dex: 1.0, con: 0.9, int: 1.0, wit: 1.4, men: 1.0 },
+    classBonus: { hpMult: 0.95, defMult: 0.95, atkMult: 0.85, magMult: 1.10, spdMult: 1.10, mpMult: 1.20 },
+    startingGold: 30,
+    skills: ['win_1', 'win_2', 'win_3', 'win_4', 'win_ult'],
+    raceReq: ['human']
+  },
+
+  // ========== 8. РУННЫЙ КУЗНЕЦ ==========
+  runesmith: {
+    id: 'runesmith',
+    name: 'Рунный Кузнец',
+    role: 'Гибрид',
+    desc: 'Руны Предтеч. Самоусиление, шипы, рунные удары. Бьёт и держит удар.',
+    lore: 'Гранн, изучившие руны глубже, чем свои молоты.',
+    sprite: 'runesmith',
+    baseStats: { str: 8, dex: 4, con: 8, int: 5, wit: 5, men: 7 },
+    statGrowth: { str: 1.2, dex: 0.5, con: 1.3, int: 0.7, wit: 0.7, men: 1.1 },
+    classBonus: { hpMult: 1.10, defMult: 1.15, atkMult: 1.10, magMult: 0.85, spdMult: 0.90, mpMult: 0.95 },
+    startingGold: 27,
+    skills: ['run_1', 'run_2', 'run_3', 'run_4', 'run_ult'],
+    raceReq: ['orc', 'minotaur']
+  },
+
+  // ========== 9. КОПЬЕНОСЕЦ ==========
+  spearman: {
+    id: 'spearman',
+    name: 'Копьеносец',
+    role: 'Дальний мили / Контроль',
+    desc: 'Дистанция, оглушения, пробитие брони. Не подпускает близко — и убивает.',
+    lore: 'Валдорнские фаланги, что держали Разлом Бездны три века.',
+    sprite: 'spearman',
+    baseStats: { str: 8, dex: 7, con: 7, int: 4, wit: 6, men: 6 },
+    statGrowth: { str: 1.2, dex: 1.0, con: 1.0, int: 0.5, wit: 0.9, men: 0.9 },
+    classBonus: { hpMult: 1.00, defMult: 1.05, atkMult: 1.15, magMult: 0.75, spdMult: 1.00, mpMult: 0.95 },
+    startingGold: 26,
+    skills: ['spe_1', 'spe_2', 'spe_3', 'spe_4', 'spe_ult'],
+    raceReq: ['human']
+  },
+
+  // ========== 10. ЗВЕРОЛОВ ==========
+  beastmaster: {
+    id: 'beastmaster',
+    name: 'Зверолов',
+    role: 'Гибрид / Питомец',
+    desc: 'Боевой зверь рядом. Работа в паре, синергии, командные атаки.',
+    lore: 'Дроссканцы, что приручили волков севера и не пожалели.',
+    sprite: 'beastmaster',
+    baseStats: { str: 6, dex: 8, con: 7, int: 5, wit: 6, men: 6 },
+    statGrowth: { str: 0.9, dex: 1.3, con: 1.0, int: 0.6, wit: 0.9, men: 0.9 },
+    classBonus: { hpMult: 1.05, defMult: 1.00, atkMult: 1.00, magMult: 0.85, spdMult: 1.10, mpMult: 1.00 },
+    startingGold: 24,
+    skills: ['bea_1', 'bea_2', 'bea_3', 'bea_4', 'bea_ult'],
+    raceReq: ['orc']
+  },
+
+  // ========== 11. СКОВАННЫЙ ДУШОЙ (SOULFORGED) ==========
+  soulforged: {
+    id: 'soulforged',
+    name: 'Скованный Душой',
+    role: 'Гибрид / Танк-ДД-Хил',
+    desc: 'Тот, кто не выдохнул. Носит в себе триста лет мёртвых голосов.',
+    lore: 'Когда пала Завеса, воздух наполнился мёртвыми. Те, кто остался жив, дышали ими. Скованный — тот, кто не выдохнул. Он слышит Предтеч, солдат, мародёров, детей. Он не безумен. Он просто слышит слишком много. И каждый удар — это чей-то крик.',
+    sprite: 'soulforged',
+    baseStats: { str: 8, dex: 7, con: 9, int: 6, wit: 7, men: 8 },
+    statGrowth: { str: 1.0, dex: 0.9, con: 1.2, int: 0.8, wit: 0.9, men: 1.0 },
+    classBonus: { hpMult: 1.05, defMult: 1.00, atkMult: 1.10, magMult: 1.05, spdMult: 1.00, mpMult: 1.10 },
+    startingGold: 25,
+    skills: ['sf_1', 'sf_2', 'sf_3', 'sf_4', 'sf_ult'],
+    raceReq: ['soulless']
+  },
+
+  // ========== 12. ДУХ ЖЕЛЕЗНОГО РОГА ==========
+  ironhorn: {
+    id: 'ironhorn',
+    name: 'Дух Железного Рога',
+    role: 'Танк / гибрид',
+    desc: 'Древний шаманский путь минотавров и орков. Воин говорит с духами стихий — огонь сжигает, земля держит, вода лечит, молния бьёт. За ним стоят предки.',
+    lore: 'Дух ведёт руку. Мы не одни.',
+    sprite: 'ironhorn',
+    baseStats: { str: 8, dex: 4, con: 9, int: 7, wit: 5, men: 8 },
+    statGrowth: { str: 1.2, dex: 0.5, con: 1.3, int: 0.9, wit: 0.6, men: 1.0 },
+    classBonus: { hpMult: 1.15, defMult: 1.10, atkMult: 1.00, magMult: 1.05, spdMult: 0.85, mpMult: 0.90 },
+    startingGold: 30,
+    raceReq: ['minotaur', 'orc'],
+    skills: ['iro_1', 'iro_2', 'iro_3', 'iro_4', 'iro_ult']
+  }
+};

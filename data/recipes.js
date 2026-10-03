@@ -1,0 +1,117 @@
+// ============================================================
+// ВЕЙЛАН — ОБЪЕДИНЕНИЕ ВСЕХ РЕЦЕПТОВ (103)
+// ============================================================
+
+const RECIPES = Object.assign({}, RECIPES_WEAPON, RECIPES_ARMOR, RECIPES_CONSUMABLE, RECIPES_SECRET);
+
+// ============================================================
+// ФУНКЦИИ
+// ============================================================
+
+function getRecipe(id) { return RECIPES[id] || null; }
+
+function getAllRecipes() { return Object.values(RECIPES); }
+
+function getRecipesByCategory(category) {
+  return Object.values(RECIPES).filter(r => r.category === category);
+}
+
+function getRecipesByTier(tier) {
+  return Object.values(RECIPES).filter(r => r.tier === tier);
+}
+
+// Рецепты, доступные по уровню героя
+function getAvailableRecipes(hero) {
+  if (!hero) return [];
+  return Object.values(RECIPES).filter(r => r.levelReq <= hero.level);
+}
+
+// Проверка: можно ли скрафтить рецепт
+// hero — для уровня, inventory — для материалов
+function canCraftRecipe(hero, recipeId) {
+  const recipe = RECIPES[recipeId];
+  if (!recipe) return { ok: false, reason: 'Рецепт не найден' };
+
+  if (hero && hero.level < recipe.levelReq) {
+    return { ok: false, reason: 'Требуется уровень ' + recipe.levelReq };
+  }
+
+  if (hero && hero.gold < recipe.gold) {
+    return { ok: false, reason: 'Не хватает золота (' + recipe.gold + ')' };
+  }
+
+  if (!window.Inventory) {
+    return { ok: false, reason: 'Инвентарь недоступен' };
+  }
+
+  // Проверка материалов
+  for (const mat of recipe.materials) {
+    if (!Inventory.hasItem(mat.itemId, mat.quantity)) {
+      const item = ITEMS[mat.itemId];
+      return {
+        ok: false,
+        reason: 'Не хватает: ' + (item ? item.name : mat.itemId) + ' (' + mat.quantity + ')'
+      };
+    }
+  }
+
+  return { ok: true };
+}
+
+// Крафт рецепта
+// Возвращает { ok, success, itemId, reason }
+function craftRecipe(hero, recipeId) {
+  const recipe = RECIPES[recipeId];
+  if (!recipe) return { ok: false, reason: 'Рецепт не найден' };
+
+  const check = canCraftRecipe(hero, recipeId);
+  if (!check.ok) return check;
+
+  // Списываем материалы
+  for (const mat of recipe.materials) {
+    Inventory.removeFromInventory(mat.itemId, mat.quantity);
+  }
+
+  // Списываем золото
+  hero.gold -= recipe.gold;
+  if (window.STATE && window.STATE.stats) {
+    window.STATE.stats.goldSpent += recipe.gold;
+  }
+
+  // Бросок успеха
+  const success = Math.random() < recipe.successChance;
+
+  if (!success) {
+    return { ok: true, success: false, reason: 'Крафт не удался — материалы потеряны' };
+  }
+
+  // Выдаём результат
+  const res = Inventory.addToInventory(recipe.result.itemId, recipe.result.quantity);
+  const item = ITEMS[recipe.result.itemId];
+
+  if (res.added === 0) {
+    return { ok: false, reason: 'Сумка переполнена' };
+  }
+
+  return {
+    ok: true,
+    success: true,
+    itemId: recipe.result.itemId,
+    itemName: item ? item.name : recipe.result.itemId,
+    quantity: res.added
+  };
+}
+
+// ============================================================
+// ЭКСПОРТ
+// ============================================================
+
+window.Recipes = {
+  getRecipe,
+  getAllRecipes,
+  getRecipesByCategory,
+  getRecipesByTier,
+  getAvailableRecipes,
+  canCraftRecipe,
+  craftRecipe
+};

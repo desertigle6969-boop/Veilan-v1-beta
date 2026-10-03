@@ -1,0 +1,353 @@
+// ============================================================
+// ВЕЙЛАН — КРАФТ, ЗАТОЧКА, АУГМЕНТАЦИЯ
+// ============================================================
+
+// ============================================================
+// КРАФТ
+// ============================================================
+
+// Проверка: можно ли скрафтить рецепт
+function canCraft(recipeId) {
+  if (!window.Recipes || !window.STATE || !window.STATE.hero) {
+    return { ok: false, reason: 'Система не готова' };
+  }
+  return Recipes.canCraftRecipe(window.STATE.hero, recipeId);
+}
+
+// Крафт рецепта
+function craft(recipeId) {
+  if (!window.Recipes || !window.STATE || !window.STATE.hero) {
+    return { ok: false, reason: 'Система не готова' };
+  }
+  const hero = window.STATE.hero;
+  const recipe = (window.Recipes && Recipes.getRecipe) ? Recipes.getRecipe(recipeId) : null;
+
+  // Защита: тайный рецепт уже использован
+  if (recipe && recipe.category === 'secret' && window.Secrets && Secrets.isRecipeConsumed) {
+    if (Secrets.isRecipeConsumed(hero, recipeId)) {
+      return { ok: false, reason: 'Ты уже выковал это. Больше не повторится.' };
+    }
+  }
+
+  const result = Recipes.craftRecipe(hero, recipeId);
+
+  // После успешного крафта — пометить тайный рецепт использованным
+  if (result.ok && result.success && recipe && recipe.category === 'secret' && window.Secrets && Secrets.markRecipeConsumed) {
+    Secrets.markRecipeConsumed(hero, recipeId);
+  }
+
+  if (result.ok && window.Save) Save.saveState();
+  return result;
+}
+
+// Список доступных рецептов
+// ============================================================
+// ТАЙНОЕ РЕМЕСЛО (скрытые рецепты)
+// Разблокируются, если у игрока есть странный предмет (unlockItem)
+// ============================================================
+
+function getSecretRecipes() {
+  if (!window.Recipes || !window.STATE || !window.STATE.hero) return [];
+  const hero = window.STATE.hero;
+  const all = Recipes.getAllRecipes().filter(function(r) { return r.category === 'secret'; });
+  if (!window.Inventory || !Inventory.hasItem) return [];
+  return all.filter(function(r) {
+    if (!r.unlockItem) return false;
+    if (!Inventory.hasItem(r.unlockItem, 1)) return false;
+    // Защита от дюпа: рецепт уже использован — не показываем
+    if (window.Secrets && Secrets.isRecipeConsumed && Secrets.isRecipeConsumed(hero, r.id)) {
+      return false;
+    }
+    return true;
+  });
+}
+
+function hasAnySecretUnlock() {
+  return getSecretRecipes().length > 0;
+}
+
+function getCraftableRecipes(category) {
+  if (!window.Recipes || !window.STATE || !window.STATE.hero) return [];
+  const all = category ? Recipes.getRecipesByCategory(category) : Recipes.getAllRecipes();
+  const hero = window.STATE.hero;
+  return all.filter(r => r.levelReq <= hero.level);
+}
+
+// ============================================================
+// ЗАТОЧКА
+// ============================================================
+
+// Слоты, которые можно точить (все 9)
+const ENHANCE_SLOTS = ['weapon', 'chest', 'helmet', 'legs', 'cloak', 'ring1', 'ring2', 'amulet', 'belt'];
+
+// Получить текущий уровень заточки предмета в слоте
+function getEnhancement(slotName) {
+  if (!window.Inventory) return 0;
+  const eq = Inventory.getEquippedItem(slotName);
+  if (!eq) return 0;
+  return eq.enhancement || 0;
+}
+
+// Определить тир заточки по текущему уровню
+function getEnhancementTier(currentLevel) {
+  const tiers = CONFIG.enhancement.tiers;
+  for (const t of tiers) {
+    if (currentLevel >= t.from && currentLevel <= t.to) return t;
+  }
+  return null;
+}
+
+// Стоимость следующей заточки
+function getEnhanceCost(currentLevel) {
+  const base = CONFIG.enhancement.costBase;
+  const mult = 1 + CONFIG.enhancement.costPerLevel * currentLevel;
+  return Math.floor(base * mult);
+}
+
+// Проверка: можно ли точить предмет в слоте
+function canEnhance(slotName) {
+  if (!window.STATE || !window.STATE.hero) return { ok: false, reason: 'Нет героя' };
+  if (!window.Inventory) return { ok: false, reason: 'Нет инвентаря' };
+
+  const eq = Inventory.getEquippedItem(slotName);
+  if (!eq) return { ok: false, reason: 'Слот пуст' };
+  if (!eq.item.durability) return { ok: false, reason: 'Этот предмет нельзя точить' };
+
+  const current = eq.enhancement || 0;
+  if (current >= CONFIG.enhancement.maxLevel) {
+    return { ok: false, reason: 'Максимальный уровень заточки' };
+  }
+
+  const tier = getEnhancementTier(current);
+  if (!tier) return { ok: false, reason: 'Нет данных для этого уровня' };
+
+  const cost = getEnhanceCost(current);
+  if (window.STATE.hero.gold < cost) {
+    return { ok: false, reason: 'Не хватает золота', cost };
+  }
+
+  return { ok: true, cost, current, tier };
+}
+
+// Заточка предмета
+function enhance(slotName) {
+  const check = canEnhance(slotName);
+  if (!check.ok) return check;
+
+  const hero = window.STATE.hero;
+  const eq = Inventory.getEquippedItem(slotName);
+  const current = eq.enhancement || 0;
+  const tier = getEnhancementTier(current);
+  const cost = check.cost;
+
+  // Списываем золото
+  hero.gold -= cost;
+  if (window.STATE.stats) window.STATE.stats.goldSpent += cost;
+
+  // Бросок
+  const success = Math.random() < tier.success;
+
+  // Работаем напрямую с объектом в equipped
+  const equippedItem = window.STATE.equipped[slotName];
+  if (!equippedItem) return { ok: false, reason: 'Предмет потерян' };
+
+  let result = { ok: true, cost, current, next: current };
+
+  if (success) {
+    equippedItem.enhancement = current + 1;
+    result.success = true;
+    result.next = current + 1;
+    result.message = 'Успех! Заточка +' + (current + 1);
+  } else {
+    result.success = false;
+    if (tier.fail === 'none') {
+      result.message = 'Ничего не произошло';
+    } else if (tier.fail === 'minus1') {
+      equippedItem.enhancement = Math.max(0, current - 1);
+      result.next = equippedItem.enhancement;
+      result.message = 'Провал. Заточка −1 (текущая +' + result.next + ')';
+    } else if (tier.fail === 'reset') {
+      equippedItem.enhancement = 0;
+      result.next = 0;
+      result.message = 'Провал. Заточка обнулена';
+    } else if (tier.fail === 'destroy') {
+      // Предмет сломан окончательно
+      window.STATE.equipped[slotName] = null;
+      if (window.STATE.hero) Hero.recalcHeroStats(window.STATE.hero, false);
+      result.destroyed = true;
+      result.message = 'КРИТИЧЕСКИЙ ПРОВАЛ. Предмет уничтожен!';
+    }
+  }
+
+  if (window.Save) Save.saveState();
+  return result;
+}
+
+// ============================================================
+// АУГМЕНТАЦИЯ (КАМНИ)
+// ============================================================
+
+// Получить камни, вставленные в предмет слота
+function getGems(slotName) {
+  if (!window.Inventory) return [null, null, null];
+  const eq = Inventory.getEquippedItem(slotName);
+  if (!eq) return [null, null, null];
+  return eq.gems || [null, null, null];
+}
+
+// Свободный слот для камня (0, 1, 2) или -1
+function firstFreeGemSlot(slotName) {
+  const gems = getGems(slotName);
+  return gems.indexOf(null);
+}
+
+// Проверка: можно ли вставить камень
+function canInsertGem(slotName, gemId) {
+  if (!window.STATE || !window.STATE.hero) return { ok: false, reason: 'Нет героя' };
+  if (!window.Inventory) return { ok: false, reason: 'Нет инвентаря' };
+
+  const eq = Inventory.getEquippedItem(slotName);
+  if (!eq) return { ok: false, reason: 'Слот пуст' };
+  if (!eq.item.durability) return { ok: false, reason: 'В этот предмет нельзя вставлять камни' };
+
+  const free = firstFreeGemSlot(slotName);
+  if (free === -1) return { ok: false, reason: 'Все слоты заняты (макс. ' + CONFIG.augmentation.maxSlots + ')' };
+
+  if (!GEMS[gemId]) return { ok: false, reason: 'Неизвестный камень' };
+
+  if (!Inventory.hasItem(gemId, 1)) return { ok: false, reason: 'Нет камня в сумке' };
+
+  return { ok: true, slotIndex: free };
+}
+
+// Вставить камень
+function insertGem(slotName, gemId) {
+  const check = canInsertGem(slotName, gemId);
+  if (!check.ok) return check;
+
+  const equippedItem = window.STATE.equipped[slotName];
+  if (!equippedItem) return { ok: false, reason: 'Предмет потерян' };
+
+  if (!equippedItem.gems) equippedItem.gems = [null, null, null];
+  equippedItem.gems[check.slotIndex] = gemId;
+
+  // Убираем камень из сумки
+  Inventory.removeFromInventory(gemId, 1);
+
+  if (window.STATE.hero) Hero.recalcHeroStats(window.STATE.hero, false);
+  if (window.Save) Save.saveState();
+
+  return { ok: true, slotIndex: check.slotIndex, gem: GEMS[gemId] };
+}
+
+// Проверка: можно ли извлечь камень
+function canExtractGem(slotName, slotIndex) {
+  if (!window.Inventory) return { ok: false, reason: 'Нет инвентаря' };
+  const eq = Inventory.getEquippedItem(slotName);
+  if (!eq) return { ok: false, reason: 'Слот пуст' };
+  const gems = eq.gems || [];
+  if (!gems[slotIndex]) return { ok: false, reason: 'В этом слоте нет камня' };
+  return { ok: true, gemId: gems[slotIndex] };
+}
+
+// Извлечь камень (с риском)
+function extractGem(slotName, slotIndex) {
+  const check = canExtractGem(slotName, slotIndex);
+  if (!check.ok) return check;
+
+  const equippedItem = window.STATE.equipped[slotName];
+  if (!equippedItem) return { ok: false, reason: 'Предмет потерян' };
+
+  const gemId = equippedItem.gems[slotIndex];
+  equippedItem.gems[slotIndex] = null;
+
+  // Ролл
+  const roll = Math.random();
+  let result = { ok: true, gemId: gemId };
+
+  if (roll < CONFIG.augmentation.extractChanceKeep) {
+    // Камень исчез
+    result.outcome = 'destroyed';
+    result.message = 'Камень рассыпался. Он потерян.';
+  } else if (roll < CONFIG.augmentation.extractChanceKeep + CONFIG.augmentation.extractChanceDestroy) {
+    // Камень потерян полностью
+    result.outcome = 'lost';
+    result.message = 'Камень потерян навсегда.';
+  } else {
+    // Вернулся в сумку
+    const res = Inventory.addToInventory(gemId, 1);
+    if (res.added > 0) {
+      result.outcome = 'returned';
+      result.message = 'Камень вернулся в сумку.';
+    } else {
+      result.outcome = 'lost';
+      result.message = 'Сумка полна. Камень потерян.';
+    }
+  }
+
+  if (window.STATE.hero) Hero.recalcHeroStats(window.STATE.hero, false);
+  if (window.Save) Save.saveState();
+  return result;
+}
+
+// ============================================================
+// ИНФОРМАЦИЯ О ПРЕДМЕТЕ (для UI)
+// ============================================================
+
+// Полная сводка по предмету в слоте: заточка + камни + суммарные бонусы
+function getItemInfo(slotName) {
+  if (!window.Inventory) return null;
+  const eq = Inventory.getEquippedItem(slotName);
+  if (!eq) return null;
+
+  const enh = eq.enhancement || 0;
+  const gems = eq.gems || [];
+
+  // Итоговые бонусы от камней
+  const gemBonuses = {};
+  for (const gemId of gems) {
+    if (!gemId) continue;
+    const gem = GEMS[gemId];
+    if (!gem || !gem.stats) continue;
+    for (const stat in gem.stats) {
+      if (!gemBonuses[stat]) gemBonuses[stat] = 0;
+      gemBonuses[stat] += gem.stats[stat];
+    }
+  }
+
+  return {
+    item: eq.item,
+    uid: eq.uid,
+    enhancement: enh,
+    enhancementBonusPct: enh * CONFIG.enhancement.statBonusPerLevel * 100,
+    gems: gems,
+    gemBonuses: gemBonuses,
+    durability: eq.durability
+  };
+}
+
+// ============================================================
+// ЭКСПОРТ
+// ============================================================
+
+window.Craft = {
+  // Крафт
+  canCraft, craft, getCraftableRecipes,
+  getSecretRecipes, hasAnySecretUnlock,
+
+  // Заточка
+  ENHANCE_SLOTS,
+  getEnhancement,
+  getEnhancementTier,
+  getEnhanceCost,
+  canEnhance, enhance,
+
+  // Аугментация
+  getGems,
+  firstFreeGemSlot,
+  canInsertGem, insertGem,
+  canExtractGem, extractGem,
+
+  // Информация
+  getItemInfo
+};

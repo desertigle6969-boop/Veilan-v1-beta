@@ -1,0 +1,312 @@
+// ============================================================
+// ВЕЙЛАН — ЛАВКА
+// Купить / Продать предметы
+// ============================================================
+
+(function() {
+
+  var SHOP_STATE = {
+    tab: 'buy',      // 'buy' | 'sell'
+    zoneId: null
+  };
+
+  // Ассортимент лавки с ФИКСИРОВАННЫМИ ценами
+  var SHOP_STOCK = [
+    { id: 'potion_hp_small' },
+    { id: 'potion_hp_med' },
+    { id: 'potion_hp_large' },
+    { id: 'potion_mp_small' },
+    { id: 'potion_mp_med' },
+    { id: 'potion_mp_large' },
+    { id: 'potion_sp_small' },
+    { id: 'potion_sp_large' },
+    { id: 'food_bread' },
+    { id: 'food_meat' },
+    { id: 'food_stew' },
+    { id: 'scroll_return' },
+    { id: 'scroll_cleanse' }
+  ];
+
+  // Продаём за 25% от cost
+  var SELL_RATIO = 0.35;
+
+  // ============================================================
+  // ОТКРЫТИЕ ЛАВКИ
+  // ============================================================
+
+  function openShop(zoneId) {
+    SHOP_STATE.zoneId = zoneId || null;
+    SHOP_STATE.tab = 'buy';
+    renderShop();
+  }
+
+  function renderShop() {
+    var screen = (window.UI && UI.screenRoot) ? UI.screenRoot : document.getElementById('screen');
+    if (!screen) { console.error('Нет #screen'); return; }
+    screen.innerHTML = '';
+
+    // === Заголовок + Назад ===
+    var header = document.createElement('div');
+    header.className = 'panel';
+    header.style.cssText = 'padding:8px;';
+
+    var backBtn = document.createElement('button');
+    backBtn.className = 'btn';
+    backBtn.textContent = 'Назад в город';
+    backBtn.onclick = function() {
+      if (window.CityUI && CityUI.openCity) {
+        CityUI.openCity(SHOP_STATE.zoneId);
+      } else {
+        UI.tab('map');
+      }
+    };
+    header.appendChild(backBtn);
+
+    var h2 = document.createElement('h2');
+    h2.style.cssText = 'margin-top:10px;';
+    h2.textContent = 'Лавка';
+    header.appendChild(h2);
+
+    var gold = document.createElement('div');
+    gold.style.cssText = 'font-size:12px;color:#8a7a5a;margin-top:6px;';
+    gold.innerHTML = 'Золото: <span style="color:#e8b84a;">' + (STATE.hero.gold || 0) + '</span>';
+    header.appendChild(gold);
+
+    screen.appendChild(header);
+
+    // === Вкладки ===
+    var tabs = document.createElement('div');
+    tabs.className = 'panel';
+    tabs.style.cssText = 'display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:6px;';
+
+    ['buy', 'sell'].forEach(function(t) {
+      var b = document.createElement('button');
+      b.className = 'btn';
+      b.style.cssText = 'padding:8px;font-size:12px;' +
+        (SHOP_STATE.tab === t ? 'background:linear-gradient(180deg,#6a4a20,#3a2a18);color:#ffd700;border-color:#8a6a2a;' : '');
+      b.textContent = t === 'buy' ? 'Купить' : 'Продать';
+      b.onclick = function() {
+        SHOP_STATE.tab = t;
+        renderShop();
+      };
+      tabs.appendChild(b);
+    });
+    screen.appendChild(tabs);
+
+    // === Список ===
+    if (SHOP_STATE.tab === 'buy') {
+      renderBuyList(screen);
+    } else {
+      renderSellList(screen);
+    }
+  }
+
+  // ============================================================
+  // СПИСОК ПОКУПКИ
+  // ============================================================
+
+  function renderBuyList(screen) {
+    var panel = document.createElement('div');
+    panel.className = 'panel';
+
+    SHOP_STOCK.forEach(function(entry) {
+      var itemId = entry.id;
+      var item = ITEMS[itemId];
+      if (!item) return;
+      var cost = (window.getBuyPrice) ? getBuyPrice(item) : (item.cost || 0);
+
+      var canAfford = (STATE.hero.gold || 0) >= cost;
+
+      var row = document.createElement('div');
+      row.style.cssText =
+        'display:flex;align-items:center;gap:8px;padding:6px 4px;' +
+        'border-bottom:1px solid #2a1f14;';
+
+      // Иконка
+      var iconBox = document.createElement('div');
+      iconBox.style.cssText =
+        'width:40px;height:40px;background:rgba(10,8,5,0.8);' +
+        'border:1px solid #4a3a1e;border-radius:3px;' +
+        'display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+      var iconPath = (window.ItemIcons && ItemIcons.getItemIcon) ? ItemIcons.getItemIcon(itemId) : null;
+      if (iconPath) {
+        iconBox.innerHTML = '<img src="' + iconPath + '" style="width:80%;height:80%;object-fit:contain;image-rendering:pixelated;">';
+      } else {
+        iconBox.innerHTML = '<span style="color:#8a7a5a;">?</span>';
+      }
+      row.appendChild(iconBox);
+
+      // Инфо
+      var info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0;';
+      var nameEl = document.createElement('div');
+      nameEl.style.cssText = 'font-size:12px;color:#d4c8a8;font-weight:bold;';
+      nameEl.textContent = item.name;
+      info.appendChild(nameEl);
+      if (item.desc) {
+        var desc = document.createElement('div');
+        desc.style.cssText = 'font-size:10px;color:#8a7a5a;line-height:1.3;margin-top:2px;';
+        desc.textContent = item.desc;
+        info.appendChild(desc);
+      }
+      row.appendChild(info);
+
+      // Цена + кнопка
+      var right = document.createElement('div');
+      right.style.cssText = 'text-align:right;flex-shrink:0;';
+      var price = document.createElement('div');
+      price.style.cssText = 'font-size:11px;color:#e8b84a;margin-bottom:4px;';
+      price.textContent = cost + ' зол.';
+      right.appendChild(price);
+
+      var buyBtn = document.createElement('button');
+      buyBtn.className = 'btn';
+      buyBtn.style.cssText = 'padding:4px 10px;font-size:11px;' + (canAfford ? '' : 'opacity:0.4;');
+      buyBtn.textContent = 'Купить';
+      buyBtn.disabled = !canAfford;
+      buyBtn.onclick = function() { doBuy(itemId); };
+      right.appendChild(buyBtn);
+      row.appendChild(right);
+
+      panel.appendChild(row);
+    });
+
+    screen.appendChild(panel);
+  }
+
+  function doBuy(itemId) {
+    var item = ITEMS[itemId];
+    if (!item) return;
+    // Ищем фиксированную цену
+    var cost = item.cost || 0;
+    for (var i = 0; i < SHOP_STOCK.length; i++) {
+      if (SHOP_STOCK[i].id === itemId) {
+        cost = SHOP_STOCK[i].price;
+        break;
+      }
+    }
+    if ((STATE.hero.gold || 0) < cost) {
+      Toast.bad('Не хватает золота');
+      return;
+    }
+
+    var res = Inventory.addToInventory(itemId, 1);
+    if (res.added < 1) {
+      Toast.bad('Сумка полна');
+      return;
+    }
+    STATE.hero.gold -= cost;
+
+    if (STATE.stats) STATE.stats.goldSpent = (STATE.stats.goldSpent || 0) + cost;
+
+    Toast.good('Куплено: ' + item.name);
+    Save.saveState();
+    renderShop();
+    if (window.updateTopbar) updateTopbar();
+  }
+
+  // ============================================================
+  // СПИСОК ПРОДАЖИ (инвентарь)
+  // ============================================================
+
+  function renderSellList(screen) {
+    var panel = document.createElement('div');
+    panel.className = 'panel';
+
+    var inv = Inventory.getInventoryList();
+    var sellable = inv.filter(function(slot) {
+      return slot.item && slot.item.cost;
+    });
+
+    if (sellable.length === 0) {
+      panel.innerHTML = '<div style="color:#8a7a5a;font-size:12px;padding:8px;">Нечего продавать</div>';
+      screen.appendChild(panel);
+      return;
+    }
+
+    sellable.forEach(function(slot) {
+      var item = slot.item;
+      // Считаем цену продажи от ЦЕНЫ ПОКУПКИ, а не от cost
+      var buyPrice = getBuyPrice(slot.itemId);
+      var price = Math.max(1, Math.floor(buyPrice * SELL_RATIO));
+
+      var row = document.createElement('div');
+      row.style.cssText =
+        'display:flex;align-items:center;gap:8px;padding:6px 4px;' +
+        'border-bottom:1px solid #2a1f14;';
+
+      var iconBox = document.createElement('div');
+      iconBox.style.cssText =
+        'width:40px;height:40px;background:rgba(10,8,5,0.8);' +
+        'border:1px solid #4a3a1e;border-radius:3px;' +
+        'display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+      var iconPath = (window.ItemIcons && ItemIcons.getItemIcon) ? ItemIcons.getItemIcon(slot.itemId) : null;
+      if (iconPath) {
+        iconBox.innerHTML = '<img src="' + iconPath + '" style="width:80%;height:80%;object-fit:contain;image-rendering:pixelated;">';
+      } else {
+        iconBox.innerHTML = '<span style="color:#8a7a5a;">?</span>';
+      }
+      row.appendChild(iconBox);
+
+      var info = document.createElement('div');
+      info.style.cssText = 'flex:1;min-width:0;';
+      var nameEl = document.createElement('div');
+      nameEl.style.cssText = 'font-size:12px;color:#d4c8a8;font-weight:bold;';
+      nameEl.textContent = item.name + (slot.quantity > 1 ? ' x' + slot.quantity : '');
+      info.appendChild(nameEl);
+      row.appendChild(info);
+
+      var right = document.createElement('div');
+      right.style.cssText = 'text-align:right;flex-shrink:0;';
+      var priceEl = document.createElement('div');
+      priceEl.style.cssText = 'font-size:11px;color:#e8b84a;margin-bottom:4px;';
+      priceEl.textContent = price + ' зол.';
+      right.appendChild(priceEl);
+
+      var sellBtn = document.createElement('button');
+      sellBtn.className = 'btn';
+      sellBtn.style.cssText = 'padding:4px 10px;font-size:11px;';
+      sellBtn.textContent = 'Продать';
+      sellBtn.onclick = function() { doSell(slot.uid, slot.itemId, price, slot.quantity || 1); };
+      right.appendChild(sellBtn);
+      row.appendChild(right);
+
+      panel.appendChild(row);
+    });
+
+    screen.appendChild(panel);
+  }
+
+  function doSell(uid, itemId, price, qty) {
+    var item = ITEMS[itemId];
+    if (!item) return;
+
+    var r = Inventory.removeByUid(uid, qty);
+    if (r && r.removed === 0) {
+      Toast.bad('Не удалось продать');
+      return;
+    }
+    STATE.hero.gold = (STATE.hero.gold || 0) + price * qty;
+
+    if (STATE.stats) {
+      STATE.stats.goldEarned = (STATE.stats.goldEarned || 0) + price * qty;
+      STATE.stats.itemsSold = (STATE.stats.itemsSold || 0) + qty;
+    }
+
+    Toast.good('Продано: ' + item.name + ' за ' + (price * qty));
+    Save.saveState();
+    renderShop();
+    if (window.updateTopbar) updateTopbar();
+  }
+
+  // ============================================================
+  // ЭКСПОРТ
+  // ============================================================
+
+  window.ShopUI = {
+    openShop: openShop,
+    renderShop: renderShop
+  };
+
+  console.log('[shop-ui] загружен');
+})();

@@ -1,0 +1,959 @@
+// ============================================================
+// ВЕЙЛАН — ГЛАВНЫЙ РЕНДЕР (Часть 1)
+// GAME_Init, роутинг, топбар, вкладка "Герой"
+// ============================================================
+
+// ============================================================
+// ГЛОБАЛЬНОЕ СОСТОЯНИЕ UI
+// ============================================================
+
+window.UI = {
+  currentTab: 'hero',
+  history: [],          // стек экранов для навигации
+  screenRoot: null,
+  autoSaveTimer: null
+};
+
+// Ссылка на STATE (создаётся в GAME_Init)
+window.STATE = null;
+
+// ============================================================
+// ТОЧКА ВХОДА
+// ============================================================
+
+function GAME_Init() {
+  const screen = document.getElementById('screen');
+  if (!screen) {
+    console.error('Нет #screen в HTML');
+    return null;
+  }
+  UI.screenRoot = screen;
+
+  // Кнопки внизу — обработчики
+  const navBtns = document.querySelectorAll('#bottombar .navbtn');
+  navBtns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      const tab = btn.getAttribute('data-tab');
+      // === ЗВУК ОТКРЫТИЯ ИНВЕНТАРЯ ===
+      if (tab === 'inv' && UI.currentTab !== 'inv' && window.SFX) {
+        SFX.play('inv_open');
+      }
+      // === ЗВУК ЗАКРЫТИЯ (переход с инвентаря на другую вкладку) ===
+      if (UI.currentTab === 'inv' && tab !== 'inv' && window.SFX) {
+        SFX.play('inv_close');
+      }
+      UI.tab(tab);
+    });
+  });
+
+  // Загружаем сохранение или создаём нового героя
+  const saved = Save.loadState();
+
+  if (saved && saved.hero) {
+    STATE = saved;
+    console.log('Сохранение загружено');
+
+    UI.tab('hero');
+    updateTopbar();
+    updateStatusBars();
+    Save.startAutoSave();
+  } else {
+    STATE = Save.createEmptyState();
+    console.log('Нет сохранения — открываем создание');
+    showStartScreen();
+  }
+
+  return UI;
+}
+
+// ============================================================
+// СТАРТОВЫЙ ЭКРАН (создание героя)
+// ============================================================
+
+function showStartScreen() {
+  const screen = UI.screenRoot;
+  screen.innerHTML = '';
+
+  // ФОН-ОБЛОЖКА (карта Вейлана)
+  screen.classList.add('start-screen');
+  screen.style.backgroundImage =
+    'linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.2) 30%, rgba(0,0,0,0.3) 60%, rgba(0,0,0,0.55) 100%),' +
+    'url(sprites/backgrounds/title.png)';
+  screen.style.backgroundSize = 'cover, cover';
+  screen.style.backgroundPosition = 'center, center';
+  screen.style.backgroundRepeat = 'no-repeat, no-repeat';
+
+  const intro = document.createElement('div');
+  intro.className = 'intro start-intro';
+  intro.innerHTML =
+    '<h1 class="start-title">ВЕЙЛАН</h1>' +
+    '<p class="sub start-sub">Мир расколот. Завеса пала. Осколки Зари разлетелись по пустоте,<br>' +
+    'а из трещин хлынула Бездна.<br><br>' +
+    'Ты — Безымянный. Осколок выбрал тебя. Помнишь ли ты, кем был?</p>' +
+    '<hr class="start-hr">' +
+    '<p class="sub start-chapter">Глава I: Лагерь Серых Холмов</p>';
+  screen.appendChild(intro);
+
+  const btn = document.createElement('button');
+  btn.className = 'btn btn-primary start-btn';
+  btn.style.cssText = 'display:block;margin:20px auto;padding:16px 44px;font-size:16px;letter-spacing:2px;';
+  btn.textContent = 'НАЧАТЬ';
+  btn.onclick = function() {
+    Modal.characterCreation(function(hero) {
+      if (!hero) return;
+      STATE.hero = hero;
+      Save.saveState();
+      Save.startAutoSave();
+      if (window.SFX) SFX.play('level_up');
+      Toast.good('Добро пожаловать, ' + hero.name + '!');
+      // Убираем фон-обложку
+      screen.classList.remove('start-screen');
+      screen.style.backgroundImage = '';
+      UI.tab('hero');
+      updateTopbar();
+      updateStatusBars();
+    });
+  };
+  screen.appendChild(btn);
+}
+
+// ============================================================
+// РОУТИНГ
+// ============================================================
+
+// Переключение вкладки
+UI.tab = function(name) {
+  UI.currentTab = name;
+
+  // Обновляем кнопки
+  document.querySelectorAll('#bottombar .navbtn').forEach(function(b) {
+    if (b.getAttribute('data-tab') === name) b.classList.add('active');
+    else b.classList.remove('active');
+  });
+
+  // Рендер
+  render();
+};
+
+// Рендер текущей вкладки
+function render() {
+  const screen = UI.screenRoot;
+  if (!screen) return;
+  screen.innerHTML = '';
+
+  // Убираем старый фон (если был)
+  if (window._bgCleanup) {
+    try { window._bgCleanup(); } catch (e) {}
+    window._bgCleanup = null;
+  }
+
+  if (!STATE || !STATE.hero) {
+    showStartScreen();
+    return;
+  }
+
+  switch (UI.currentTab) {
+    case 'hero':  renderHeroTab(screen); break;
+    case 'inv':   renderInventoryTab(screen); break;
+    case 'map':   renderWorldTab(screen); break;
+    case 'quest': renderQuestTab(screen); break;
+    case 'menu':  renderMenuTab(screen); break;
+    default:      renderHeroTab(screen);
+  }
+
+  // Обновляем полоски
+  updateStatusBars();
+  updateTopbar();
+}
+
+// ============================================================
+// ТОПБАР
+// ============================================================
+
+function updateTopbar() {
+  if (!STATE || !STATE.hero) return;
+  const h = STATE.hero;
+
+  const tbName = document.getElementById('tb-name');
+  const tbRace = document.getElementById('tb-race-class');
+  const tbLevel = document.getElementById('tb-level');
+  const tbGold = document.getElementById('tb-gold');
+
+  if (tbName) tbName.textContent = h.name;
+  if (tbRace) {
+    const race = RACES[h.raceId];
+    const cls = CLASSES[h.classId];
+    tbRace.textContent = (race ? race.name : '?') + ' / ' + (cls ? cls.name : '?');
+  }
+  if (tbLevel) tbLevel.textContent = 'Ур. ' + h.level;
+  if (tbGold) tbGold.textContent = 'Золото: ' + h.gold;
+}
+
+// ============================================================
+// ПОЛОСКИ HP/MP/SP/РЕЗОНАНС
+// ============================================================
+
+function setBar(barId, txtId, cur, max) {
+  const bar = document.getElementById(barId);
+  const txt = document.getElementById(txtId);
+  if (!bar || !txt) return;
+  const pct = max > 0 ? Math.max(0, Math.min(100, (cur / max) * 100)) : 0;
+  bar.style.width = pct + '%';
+  txt.textContent = Math.round(cur) + ' / ' + Math.round(max);
+}
+
+function updateStatusBars() {
+  if (!STATE || !STATE.hero) return;
+  const h = STATE.hero;
+  setBar('bar-hp', 'txt-hp', h.hp, h.maxHp);
+  setBar('bar-mp', 'txt-mp', h.mp, h.maxMp);
+  setBar('bar-sp', 'txt-sp', h.sp, h.maxSp);
+  setBar('bar-res', 'txt-res', h.resonance || 0, 100);
+}
+
+// ============================================================
+// ВКЛАДКА "ГЕРОЙ"
+// ============================================================
+
+function renderHeroTab(screen) {
+  const h = STATE.hero;
+  const race = RACES[h.raceId];
+  const cls = CLASSES[h.classId];
+
+  // ========== ПАНЕЛЬ 1: Спрайт + имя ==========
+  const spritePanel = document.createElement('div');
+  spritePanel.className = 'panel';
+  spritePanel.style.cssText =
+    'text-align:center;' +
+    'background-image:' +
+      'linear-gradient(180deg,rgba(8,10,16,0.35) 0%,rgba(5,6,10,0.55) 100%),' +
+      'url(sprites/fx/hero_bg_new.jpg);' +
+    'background-size:cover, 100% auto;' +
+    'background-position:center top, center bottom;' +
+    'background-repeat:no-repeat, no-repeat;' +
+    'position:relative;overflow:hidden;' +
+    'padding-bottom:12px;' +
+    'min-height:300px;' +
+    'display:flex;flex-direction:column;';
+
+  
+
+  const h2 = document.createElement('h2');
+  h2.textContent = h.name;
+  spritePanel.appendChild(h2);
+
+  const subInfo = document.createElement('p');
+  subInfo.style.cssText = 'color:#8a7a5a;font-size:12px;margin-bottom:12px;';
+  subInfo.textContent = (race ? race.name : '?') + ' ' + (cls ? cls.name : '?') + ' | Уровень ' + h.level;
+  spritePanel.appendChild(subInfo);
+
+  // Спрайт героя + костёр справа
+  const spriteWrap = document.createElement('div');
+  spriteWrap.style.cssText =
+    'padding:0;display:flex;align-items:flex-end;justify-content:center;' +
+    'gap:16px;position:relative;height:120px;margin-top:auto;margin-bottom:6px;';
+
+  // Центральный блок со спрайтом
+  const heroBlock = document.createElement('div');
+  heroBlock.style.cssText =
+    'flex-shrink:0;position:relative;' +
+    'filter:drop-shadow(0 6px 4px rgba(0,0,0,0.85)) drop-shadow(0 2px 2px rgba(0,0,0,0.7));';
+  var sprite = null;
+  if (window.Sprite && Sprite.renderHeroSprite) {
+    try { sprite = Sprite.renderHeroSprite(h, 64); } catch (e) { sprite = null; }
+  }
+  if (sprite) {
+    heroBlock.appendChild(sprite);
+  } else {
+    heroBlock.innerHTML = '<div style="padding:30px;color:#8a7a5a;font-style:italic;">[спрайт недоступен]</div>';
+  }
+  spriteWrap.appendChild(heroBlock);
+
+  // Костёр справа
+  const bonfire = document.createElement('img');
+  bonfire.src = 'sprites/fx/bonfire_clean.gif';
+  bonfire.style.cssText =
+    'width:48px;height:48px;' +
+    'image-rendering:pixelated;' +
+    'filter:saturate(1.1) brightness(0.85) contrast(1.05) drop-shadow(0 6px 4px rgba(0,0,0,0.85)) drop-shadow(0 2px 2px rgba(0,0,0,0.7));' +
+    'opacity:0.92;' +
+    'mix-blend-mode:screen;' +
+    'position:absolute;' +
+    'right:80px;' +
+    'bottom:0;' +
+    'pointer-events:none;';
+  bonfire.onerror = function() {
+    bonfire.style.display = 'none';
+  };
+  spriteWrap.appendChild(bonfire);
+
+  spritePanel.appendChild(spriteWrap);
+
+  // Опыт
+  const expNeed = expToNext(h.level);
+  if (expNeed !== Infinity) {
+    const expRow = document.createElement('div');
+    expRow.style.cssText = 'margin-top:8px;';
+    const expBar = document.createElement('div');
+    expBar.style.cssText = 'background:#000;border:1px solid #4a3a1e;border-radius:3px;height:14px;position:relative;overflow:hidden;';
+    const expFill = document.createElement('div');
+    const pct = Math.min(100, (h.exp / expNeed) * 100);
+    expFill.style.cssText = 'height:100%;width:' + pct + '%;background:linear-gradient(90deg,#6a4810,#ffcc44);transition:width 0.3s;';
+    expBar.appendChild(expFill);
+    const expTxt = document.createElement('span');
+    expTxt.style.cssText = 'position:absolute;inset:0;text-align:center;font-size:10px;line-height:14px;color:#fff;text-shadow:0 0 2px #000;font-weight:bold;';
+    expTxt.textContent = 'Опыт: ' + h.exp + ' / ' + expNeed;
+    expBar.appendChild(expTxt);
+    expRow.appendChild(expBar);
+    spritePanel.appendChild(expRow);
+  } else {
+    const maxed = document.createElement('p');
+    maxed.style.cssText = 'color:#ffd700;font-weight:bold;margin-top:8px;';
+    maxed.textContent = 'МАКСИМАЛЬНЫЙ УРОВЕНЬ';
+    spritePanel.appendChild(maxed);
+  }
+
+  screen.appendChild(spritePanel);
+
+  // ========== ПАНЕЛЬ 2: Характеристики ==========
+  const statsPanel = document.createElement('div');
+  statsPanel.className = 'panel';
+
+  const statsH2 = document.createElement('h2');
+  statsH2.textContent = 'Характеристики';
+  statsPanel.appendChild(statsH2);
+
+  const statsGrid = document.createElement('div');
+  statsGrid.className = 'grid2';
+
+  const statList = [
+    { key: 'str', label: 'STR', name: 'Сила' },
+    { key: 'dex', label: 'DEX', name: 'Ловкость' },
+    { key: 'con', label: 'CON', name: 'Тело' },
+    { key: 'int', label: 'INT', name: 'Разум' },
+    { key: 'wit', label: 'WIT', name: 'Воля' },
+    { key: 'men', label: 'MEN', name: 'Дух' }
+  ];
+
+  statList.forEach(function(s) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;padding:6px 8px;background:#1a1208;border:1px solid #3a2a18;border-radius:3px;font-size:12px;';
+    const left = document.createElement('span');
+    left.innerHTML = '<b style="color:#e8b84a;">' + s.label + '</b> <span style="color:#8a7a5a;">' + s.name + '</span>';
+    const right = document.createElement('span');
+    right.style.cssText = 'color:#fff;font-weight:bold;';
+    right.textContent = Hero.getEffectiveStat(h, s.key);
+    row.appendChild(left);
+    row.appendChild(right);
+    statsGrid.appendChild(row);
+  });
+
+  statsPanel.appendChild(statsGrid);
+
+  // ========== Боевые характеристики ==========
+  const combatH3 = document.createElement('h3');
+  combatH3.style.cssText = 'color:#e8b84a;font-size:12px;letter-spacing:1px;margin:14px 0 8px;border-bottom:1px solid #3a2a18;padding-bottom:4px;';
+  combatH3.textContent = 'Боевые';
+  statsPanel.appendChild(combatH3);
+
+  const d = Hero.getDerivedStats(h);
+  const combatGrid = document.createElement('div');
+  combatGrid.className = 'grid3';
+
+  const combatList = [
+    { label: 'ATK',  value: d.atk },
+    { label: 'MAG',  value: d.mag },
+    { label: 'DEF',  value: d.def },
+    { label: 'MDEF', value: d.mdef },
+    { label: 'SPD',  value: d.spd },
+    { label: 'CRIT', value: d.crit + '%' },
+    { label: 'EVA',  value: d.eva + '%' },
+    { label: 'ACC',  value: d.acc + '%' },
+    { label: 'HP',   value: h.maxHp }
+  ];
+
+  combatList.forEach(function(c) {
+    const box = document.createElement('div');
+    box.style.cssText = 'padding:6px;background:#1a1208;border:1px solid #3a2a18;border-radius:3px;text-align:center;';
+    box.innerHTML = '<div style="font-size:10px;color:#8a7a5a;letter-spacing:1px;">' + c.label + '</div>' +
+                    '<div style="color:#ffd700;font-weight:bold;font-size:14px;">' + c.value + '</div>';
+    combatGrid.appendChild(box);
+  });
+
+  statsPanel.appendChild(combatGrid);
+  screen.appendChild(statsPanel);
+
+  // ========== ПАНЕЛЬ 3: Экипировка ==========
+  renderEquipmentPanel(screen);
+
+  // ========== ПАНЕЛЬ 3.5: Сетовые бонусы ==========
+  renderSetBonusesPanel(screen);
+
+  // ========== ПАНЕЛЬ 4: PvP-ранг ==========
+  renderPvPPanel(screen);
+}
+
+// ============================================================
+// СЕТОВЫЕ БОНУСЫ
+// ============================================================
+
+function renderSetBonusesPanel(screen) {
+  if (!window.UniqueItems || !UniqueItems.getSetBonuses) return;
+  var hero = STATE && STATE.hero;
+  if (!hero) return;
+
+  var bonuses = UniqueItems.getSetBonuses(hero);
+  var sets = Object.keys(bonuses);
+
+  // Нет активных сетов — не показываем панель
+  if (sets.length === 0) return;
+
+  var panel = document.createElement('div');
+  panel.className = 'panel';
+
+  var h2 = document.createElement('h2');
+  h2.textContent = 'Сетовые бонусы';
+  panel.appendChild(h2);
+
+  sets.forEach(function(setName) {
+    var info = bonuses[setName];
+    var setDef = UniqueItems.SET_BONUSES[setName];
+    if (!setDef) return;
+
+    var block = document.createElement('div');
+    block.style.cssText = 'margin-bottom:10px;border-bottom:1px solid #2a241c;padding-bottom:8px;';
+
+    // Заголовок сета
+    var head = document.createElement('div');
+    head.style.cssText = 'display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;';
+    head.innerHTML =
+      '<span style="color:#c9a961;font-weight:bold;font-size:13px;">' + setDef.name + '</span>' +
+      '<span style="color:#8a7a5a;font-size:11px;">' + info.count + ' / 6</span>';
+    block.appendChild(head);
+
+    // Бонусы
+    setDef.bonuses.forEach(function(b) {
+      var active = info.count >= b.pieces;
+      var line = document.createElement('div');
+      line.style.cssText =
+        'font-size:11px;padding:2px 0;' +
+        'color:' + (active ? '#8ad08a' : '#5a5040') + ';';
+      line.textContent = (active ? '+ ' : '  ') + b.pieces + ' частей: ' + b.desc;
+      block.appendChild(line);
+    });
+
+    panel.appendChild(block);
+  });
+
+  screen.appendChild(panel);
+}
+
+// ============================================================
+// ЭКИПИРОВКА
+// ============================================================
+
+function renderEquipmentPanel(screen) {
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+
+  const h2 = document.createElement('h2');
+  h2.textContent = 'Экипировка';
+  panel.appendChild(h2);
+
+  const slots = [
+    { key: 'weapon', name: 'Оружие' },
+    { key: 'helmet', name: 'Шлем' },
+    { key: 'chest',  name: 'Нагрудник' },
+    { key: 'legs',   name: 'Поножи' },
+    { key: 'cloak',  name: 'Плащ' },
+    { key: 'ring1',  name: 'Кольцо I' },
+    { key: 'ring2',  name: 'Кольцо II' },
+    { key: 'amulet', name: 'Амулет' },
+    { key: 'belt',   name: 'Пояс' }
+  ];
+
+  const grid = document.createElement('div');
+  grid.className = 'grid2';
+
+  slots.forEach(function(s) {
+    const eq = (window.Inventory && Inventory.getEquippedItem)
+      ? Inventory.getEquippedItem(s.key)
+      : null;
+    const cell = document.createElement('div');
+    cell.style.cssText = 'padding:8px;background:#1a1208;border:1px solid #3a2a18;border-radius:3px;display:flex;align-items:center;gap:8px;' +
+      (eq ? 'cursor:pointer;' : '');
+
+    // Клик по слоту — открыть карточку с кнопкой «Снять»
+    if (eq) {
+      cell.onclick = function() {
+        openEquippedItemCard(s.key, eq);
+      };
+    }
+
+    // Иконка через Sprite.itemBadge (PNG если есть)
+    var icon = null;
+    if (eq && window.Sprite && Sprite.itemBadge) {
+      try { icon = Sprite.itemBadge(eq.item, 32); } catch (e) { icon = null; }
+    }
+
+    if (!icon) {
+      // Fallback — пустой слот
+      icon = document.createElement('div');
+      icon.style.cssText =
+        'width:32px;height:32px;flex-shrink:0;' +
+        'background:#0a0805;border:2px dashed #3a2a18;border-radius:3px;' +
+        'display:flex;align-items:center;justify-content:center;' +
+        'color:#4a3a1e;font-size:16px;';
+      icon.textContent = '·';
+    }
+    cell.appendChild(icon);
+
+    // Информация
+    const info = document.createElement('div');
+    info.style.cssText = 'flex:1;min-width:0;';
+    const name = document.createElement('div');
+    if (eq) {
+      var rc = (window.Sprite && Sprite.rarityColor) ? Sprite.rarityColor(eq.item.rarity) : '#a0a0a0';
+      name.style.cssText = 'font-size:11px;color:' + rc + ';font-weight:bold;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+      var enh = eq.enhancement ? ' +' + eq.enhancement : '';
+      name.textContent = eq.item.name + enh;
+    } else {
+      name.style.cssText = 'font-size:11px;color:#4a3a1e;font-style:italic;';
+      name.textContent = s.name;
+    }
+    info.appendChild(name);
+
+    const sub = document.createElement('div');
+    sub.style.cssText = 'font-size:9px;color:#8a7a5a;';
+    sub.textContent = s.name;
+    info.appendChild(sub);
+
+    cell.appendChild(info);
+    grid.appendChild(cell);
+  });
+
+  panel.appendChild(grid);
+  screen.appendChild(panel);
+}
+
+// ============================================================
+// ============================================================
+// КАРТОЧКА НАДЕТОГО ПРЕДМЕТА (с кнопкой Снять)
+// ============================================================
+function openEquippedItemCard(slotKey, eq) {
+  if (!eq || !eq.item) {
+    Toast.bad('Ошибка: нет предмета в слоте');
+    return;
+  }
+
+  var item = eq.item;
+  var container = document.createElement('div');
+  container.style.cssText = 'text-align:center;';
+
+  // Иконка
+  var iconBox = document.createElement('div');
+  iconBox.style.cssText =
+    'width:80px;height:80px;margin:0 auto 10px;' +
+    'background:rgba(10,8,5,0.8);border:2px solid #8a6a2a;border-radius:4px;' +
+    'display:flex;align-items:center;justify-content:center;';
+  var iconPath = (window.ItemIcons && ItemIcons.getItemIcon) ? ItemIcons.getItemIcon(item.id) : null;
+  if (iconPath) {
+    iconBox.innerHTML = '<img src="' + iconPath + '" style="width:80%;height:80%;object-fit:contain;image-rendering:pixelated;">';
+  } else {
+    iconBox.innerHTML = '<span style="color:#8a7a5a;font-size:24px;">?</span>';
+  }
+  container.appendChild(iconBox);
+
+  // Имя
+  var name = document.createElement('div');
+  name.style.cssText = 'color:#c9a961;font-weight:bold;font-size:14px;margin-bottom:4px;';
+  name.textContent = item.name + (eq.enhancement > 0 ? ' +' + eq.enhancement : '');
+  container.appendChild(name);
+
+  // Мета
+  var meta = document.createElement('div');
+  meta.style.cssText = 'color:#8a7a5a;font-size:11px;margin-bottom:8px;';
+  meta.textContent = (item.type || '') + (item.tier ? ' · Тир ' + item.tier : '');
+  container.appendChild(meta);
+
+  // Статы
+  if (item.stats) {
+    var statsBox = document.createElement('div');
+    statsBox.style.cssText = 'background:rgba(0,0,0,0.3);border:1px solid #2a1f14;border-radius:3px;padding:6px;margin-bottom:8px;font-size:12px;';
+    var statNames = {atk:'АТК',def:'DEF',mag:'MAG',mdef:'MDEF',str:'СИЛ',dex:'ЛОВ',con:'ТЕЛ',int:'РАЗ',wit:'ВОЛ',men:'ДУХ',hp:'HP',mp:'MP',sp:'SP',spd:'SPD',crit:'CRIT',eva:'EVA',acc:'ACC'};
+    var lines = [];
+    for (var k in item.stats) {
+      if (item.stats[k]) lines.push('<div style="display:flex;justify-content:space-between;"><span style="color:#8a7a5a;">' + (statNames[k] || k) + '</span><span style="color:#e8b84a;">+' + item.stats[k] + '</span></div>');
+    }
+    statsBox.innerHTML = lines.join('') || '<div style="color:#8a7a5a;">Нет статов</div>';
+    container.appendChild(statsBox);
+  }
+
+  Modal.open({
+    title: null,
+    content: container,
+    buttons: [
+      {
+        text: 'Снять',
+        type: 'danger',
+        onClick: function() {
+          var r = Inventory.unequipItem(slotKey);
+          if (r && r.ok === false) {
+            Toast.bad(r.reason || 'Не удалось снять');
+            return false;
+          }
+          Toast.info('Снято: ' + item.name);
+          if (window.Save) Save.saveState();
+          UI.tab('hero');
+        }
+      },
+      { text: 'Закрыть', type: 'default' }
+    ]
+  });
+}
+
+// PVP-РАНГ
+// ============================================================
+
+function renderPvPPanel(screen) {
+  const panel = document.createElement('div');
+  panel.className = 'panel';
+
+  const h2 = document.createElement('h2');
+  h2.textContent = 'PvP';
+  panel.appendChild(h2);
+
+  const points = (STATE.stats && STATE.stats.pvpPoints) || 0;
+  const rank = (window.PvP && PvP.getPlayerRank) ? PvP.getPlayerRank(points) : { name: 'Бронза', statBonus: 0 };
+  const nextRank = (window.PvP && PvP.getPlayerRank && CONFIG.pvp && CONFIG.pvp.playerRanks)
+    ? (function() {
+        const ranks = CONFIG.pvp.playerRanks;
+        for (let i = 0; i < ranks.length; i++) {
+          if (ranks[i].minPoints > points) return ranks[i];
+        }
+        return null;
+      })()
+    : null;
+
+  const row = document.createElement('div');
+  row.style.cssText = 'display:flex;justify-content:space-between;font-size:13px;padding:6px 0;';
+  row.innerHTML = '<span>Ранг:</span><b style="color:#e8b84a;">' + rank.name + '</b>';
+  panel.appendChild(row);
+
+  const ptsRow = document.createElement('div');
+  ptsRow.style.cssText = 'display:flex;justify-content:space-between;font-size:13px;padding:6px 0;';
+  ptsRow.innerHTML = '<span>Очки:</span><b>' + points + '</b>';
+  panel.appendChild(ptsRow);
+
+  const bonusRow = document.createElement('div');
+  bonusRow.style.cssText = 'display:flex;justify-content:space-between;font-size:13px;padding:6px 0;';
+  bonusRow.innerHTML = '<span>Бонус к статам:</span><b style="color:#6ad06a;">+' + (rank.statBonus * 100).toFixed(0) + '%</b>';
+  panel.appendChild(bonusRow);
+
+  if (nextRank) {
+    const need = nextRank.minPoints - points;
+    const pct = (points / nextRank.minPoints) * 100;
+    const progressWrap = document.createElement('div');
+    progressWrap.style.cssText = 'margin-top:8px;';
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:11px;color:#8a7a5a;margin-bottom:4px;';
+    lbl.textContent = 'До «' + nextRank.name + '»: ' + need + ' очков';
+    progressWrap.appendChild(lbl);
+    const bar = document.createElement('div');
+    bar.style.cssText = 'background:#000;border:1px solid #4a3a1e;border-radius:3px;height:8px;overflow:hidden;';
+    const fill = document.createElement('div');
+    fill.style.cssText = 'height:100%;width:' + pct + '%;background:linear-gradient(90deg,#6a1030,#a04ad0);transition:width 0.3s;';
+    bar.appendChild(fill);
+    progressWrap.appendChild(bar);
+    panel.appendChild(progressWrap);
+  }
+
+  screen.appendChild(panel);
+}
+
+// ============================================================
+// ЗАГЛУШКИ ДЛЯ ОСТАЛЬНЫХ ВКЛАДОК
+// (реализуем в Части 2)
+// ============================================================
+
+function renderInventoryTab(screen) {
+  if (window.InventoryUI && InventoryUI.renderInventoryTab) {
+    try {
+      InventoryUI.renderInventoryTab(screen);
+    } catch (e) {
+      const p = document.createElement('div');
+      p.className = 'panel';
+      p.innerHTML = '<h2>Сумка</h2><p style="color:#e05555">Ошибка: ' + e.message + '</p>';
+      screen.appendChild(p);
+    }
+  } else {
+    const p = document.createElement('div');
+    p.className = 'panel';
+    p.innerHTML = '<h2>Сумка</h2><p>InventoryUI не загружен</p>';
+    screen.appendChild(p);
+  }
+}
+
+function renderWorldTab(screen) {
+  if (window.WorldUI && WorldUI.renderWorldTab) {
+    try {
+      WorldUI.renderWorldTab(screen);
+    } catch (e) {
+      const p = document.createElement('div');
+      p.className = 'panel';
+      p.innerHTML = '<h2>Мир</h2><p style="color:#e05555">Ошибка: ' + e.message + '</p>';
+      screen.appendChild(p);
+    }
+  } else {
+    const p = document.createElement('div');
+    p.className = 'panel';
+    p.innerHTML = '<h2>Мир</h2><p>WorldUI не загружен</p>';
+    screen.appendChild(p);
+  }
+}
+
+function renderQuestTab(screen) {
+  if (window.QuestUI && QuestUI.renderQuestTab) {
+    try {
+      QuestUI.renderQuestTab(screen);
+    } catch (e) {
+      const p = document.createElement('div');
+      p.className = 'panel';
+      p.innerHTML = '<h2>Квесты</h2><p style="color:#e05555">Ошибка: ' + e.message + '</p>';
+      screen.appendChild(p);
+    }
+  } else {
+    const p = document.createElement('div');
+    p.className = 'panel';
+    p.innerHTML = '<h2>Квесты</h2><p>QuestUI не загружен</p>';
+    screen.appendChild(p);
+  }
+}
+
+function renderMenuTab(screen) {
+
+  // ========== ПАНЕЛЬ 1: Сохранение ==========
+  const savePanel = document.createElement('div');
+  savePanel.className = 'panel';
+
+  const saveH2 = document.createElement('h2');
+  saveH2.textContent = 'Сохранение';
+  savePanel.appendChild(saveH2);
+
+  // Кнопка "Сохранить сейчас"
+  const btnSave = document.createElement('button');
+  btnSave.className = 'btn btn-primary btn-full';
+  btnSave.textContent = 'Сохранить сейчас';
+  btnSave.onclick = function() {
+    if (!STATE || !STATE.hero) {
+      Toast.bad('Нет героя для сохранения');
+      return;
+    }
+    if (Save.saveState()) {
+      Toast.good('Сохранение прошло');
+    } else {
+      Toast.bad('Ошибка сохранения');
+    }
+  };
+  savePanel.appendChild(btnSave);
+
+  // Кнопка "Новая игра"
+  const btnNew = document.createElement('button');
+  btnNew.className = 'btn btn-danger btn-full';
+  btnNew.textContent = 'Новая игра';
+  btnNew.onclick = function() {
+    Modal.confirm('Удалить текущее сохранение и создать нового героя? Это действие нельзя отменить.', function() {
+      // Останавливаем автосейв — иначе он перезапишет удаление
+      Save.stopAutoSave();
+      Save.deleteSave();
+      Toast.info('Сохранение удалено. Перезагрузка...');
+      setTimeout(function() {
+        location.reload();
+      }, 800);
+    }, function() {
+      // отмена — ничего не делаем
+    });
+  };
+  savePanel.appendChild(btnNew);
+
+  screen.appendChild(savePanel);
+
+  // ========== ПАНЕЛЬ 2: Статистика ==========
+  const statsPanel = document.createElement('div');
+  statsPanel.className = 'panel';
+
+  const statsH2 = document.createElement('h2');
+  statsH2.textContent = 'Статистика';
+  statsPanel.appendChild(statsH2);
+
+  const s = STATE.stats || {};
+
+  const rows = [
+    { label: 'Убито мобов:',    value: s.mobsKilled || 0 },
+    { label: 'Убито боссов:',   value: s.bossesKilled || 0 },
+    { label: 'Смертей:',        value: s.deaths || 0 },
+    { label: 'PvP-побед:',      value: s.pvpWins || 0 },
+    { label: 'PvP-поражений:',  value: s.pvpLosses || 0 },
+    { label: 'PvP-очков:',      value: s.pvpPoints || 0 },
+    { label: 'Заработано золота:', value: s.goldEarned || 0 },
+    { label: 'Потрачено золота:',  value: s.goldSpent || 0 },
+    { label: 'Найдено предметов:', value: s.itemsFound || 0 },
+    { label: 'Продано предметов:', value: s.itemsSold || 0 }
+  ];
+
+  rows.forEach(function(r) {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;justify-content:space-between;padding:6px 0;font-size:13px;border-bottom:1px solid #2a1f14;';
+    row.innerHTML = '<span style="color:#8a7a5a;">' + r.label + '</span>' +
+                    '<b style="color:#d4c8a8;">' + r.value + '</b>';
+    statsPanel.appendChild(row);
+  });
+
+  screen.appendChild(statsPanel);
+
+  // ========== ПАНЕЛЬ 3: Настройки ==========
+  const settingsPanel = document.createElement('div');
+  settingsPanel.className = 'panel';
+
+  const setH2 = document.createElement('h2');
+  setH2.textContent = 'Настройки';
+  settingsPanel.appendChild(setH2);
+
+  const settings = (STATE.settings = STATE.settings || { sound: true, animSpeed: 1.0, autoSaveIntervalSec: 30 });
+
+  // Звук
+  const soundRow = document.createElement('div');
+  soundRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:13px;border-bottom:1px solid #2a1f14;';
+  soundRow.innerHTML = '<span>Звук:</span>';
+
+  const soundBtn = document.createElement('button');
+  soundBtn.className = 'btn';
+  soundBtn.textContent = settings.sound ? 'Включён' : 'Выключен';
+  soundBtn.onclick = function() {
+    settings.sound = !settings.sound;
+    soundBtn.textContent = settings.sound ? 'Включён' : 'Выключен';
+    if (window.Audio_) {
+      if (settings.sound) {
+        Audio_.enabled = true;
+        Audio_.init();
+        Audio_.el.play().catch(function(){});
+      } else {
+        Audio_.enabled = false;
+        if (Audio_.el) Audio_.el.pause();
+      }
+    }
+    Save.saveState();
+  };
+  soundRow.appendChild(soundBtn);
+  settingsPanel.appendChild(soundRow);
+
+  // Скорость анимаций
+  const speedRow = document.createElement('div');
+  speedRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:8px 0;font-size:13px;';
+  speedRow.innerHTML = '<span>Скорость анимаций:</span>';
+
+  const speedBtn = document.createElement('button');
+  speedBtn.className = 'btn';
+  speedBtn.textContent = 'x' + (settings.animSpeed || 1.0).toFixed(1);
+  speedBtn.onclick = function() {
+    var speeds = [0.5, 1.0, 1.5, 2.0, 3.0];
+    var idx = speeds.indexOf(settings.animSpeed || 1.0);
+    idx = (idx + 1) % speeds.length;
+    settings.animSpeed = speeds[idx];
+    speedBtn.textContent = 'x' + settings.animSpeed.toFixed(1);
+    Save.saveState();
+  };
+  speedRow.appendChild(speedBtn);
+  settingsPanel.appendChild(speedRow);
+
+  screen.appendChild(settingsPanel);
+
+  // ========== ПАНЕЛЬ 4: Экспорт / Импорт ==========
+  const expPanel = document.createElement('div');
+  expPanel.className = 'panel';
+
+  const expH2 = document.createElement('h2');
+  expH2.textContent = 'Экспорт / Импорт';
+  expPanel.appendChild(expH2);
+
+  const btnExport = document.createElement('button');
+  btnExport.className = 'btn btn-full';
+  btnExport.textContent = 'Экспортировать сохранение';
+  btnExport.onclick = function() {
+    if (!STATE || !STATE.hero) {
+      Toast.bad('Нет героя для экспорта');
+      return;
+    }
+    var txt = Save.exportSaveToText();
+    if (!txt) { Toast.bad('Ошибка экспорта'); return; }
+    var ta = document.createElement('textarea');
+    ta.value = txt;
+    ta.style.cssText = 'width:100%;height:80px;background:#0a0805;color:#e8b84a;border:1px solid #4a3a1e;font-size:10px;margin-top:8px;';
+    Modal.open({
+      title: 'Экспорт сохранения',
+      content: (function() {
+        var w = document.createElement('div');
+        w.innerHTML = '<p>Скопируй текст ниже и сохрани в безопасном месте:</p>';
+        w.appendChild(ta);
+        return w;
+      })(),
+      buttons: [{ text: 'Закрыть', type: 'primary' }],
+      closable: true
+    });
+  };
+  expPanel.appendChild(btnExport);
+
+  const btnImport = document.createElement('button');
+  btnImport.className = 'btn btn-full';
+  btnImport.textContent = 'Импортировать сохранение';
+  btnImport.onclick = function() {
+    var ta = document.createElement('textarea');
+    ta.placeholder = 'Вставь сюда текст сохранения...';
+    ta.style.cssText = 'width:100%;height:100px;background:#0a0805;color:#e8b84a;border:1px solid #4a3a1e;font-size:10px;';
+    var body = document.createElement('div');
+    body.appendChild(ta);
+    Modal.open({
+      title: 'Импорт сохранения',
+      content: body,
+      buttons: [
+        { text: 'Отмена', type: 'default' },
+        { text: 'Загрузить', type: 'primary', close: false, onClick: function() {
+          if (!ta.value || !ta.value.trim()) {
+            Toast.bad('Вставь текст сохранения');
+            return;
+          }
+          var ok = Save.importSaveFromText(ta.value);
+          if (ok) {
+            Toast.good('Импорт успешен. Перезагрузка...');
+            setTimeout(function() { location.reload(); }, 800);
+          } else {
+            Toast.bad('Ошибка импорта');
+          }
+        }}
+      ],
+      closable: true
+    });
+  };
+  expPanel.appendChild(btnImport);
+
+  screen.appendChild(expPanel);
+
+  // ========== ПАНЕЛЬ 5: О игре ==========
+  const aboutPanel = document.createElement('div');
+  aboutPanel.className = 'panel';
+
+  const aboutH2 = document.createElement('h2');
+  aboutH2.textContent = 'О игре';
+  aboutPanel.appendChild(aboutH2);
+
+  const about = document.createElement('p');
+  about.style.cssText = 'font-size:12px;line-height:1.6;color:#8a7a5a;';
+  about.innerHTML = '<b style="color:#e8b84a;">ВЕЙЛАН</b><br>' +
+    'Тёмное фэнтези-RPG<br>' +
+    'Версия 0.1 (альфа)<br><br>' +
+    'Все данные сохраняются автоматически каждые 30 секунд.';
+  aboutPanel.appendChild(about);
+
+  screen.appendChild(aboutPanel);
+}
+

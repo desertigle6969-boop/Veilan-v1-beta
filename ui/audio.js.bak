@@ -1,0 +1,142 @@
+// ============================================================
+// ВЕЙЛАН — АУДИО
+// Фоновая музыка: плейлист Lordran Tapes (Parish → Awakening → Burial Gift)
+// ============================================================
+
+(function() {
+  if (!window.Audio) {
+    console.error('Audio не поддерживается');
+    return;
+  }
+
+  var Audio_ = {
+    el: null,
+    volume: 0.25,
+    enabled: true,
+    started: false,
+
+    // Плейлист (порядок воспроизведения)
+    playlist: [
+      'audio/WAV_The_Parish_loop.wav',
+      'audio/WAV_The_Awakening_loop.wav',
+      'audio/WAV_Burial_Gift_loop.wav'
+    ],
+    trackIndex: 0,
+
+    // Создать элемент audio
+    init: function() {
+      if (this.el) return;
+      this.el = document.createElement('audio');
+      this.el.loop = false;
+      this.el.playsInline = true;
+      this.el.setAttribute('playsinline', '');
+      this.el.volume = this.volume;
+      this.el.src = this.playlist[0];
+      this.el.preload = 'auto';
+
+      var self = this;
+
+      // По окончании трека — следующий по кругу
+      this.el.addEventListener('ended', function() {
+        self.trackIndex = (self.trackIndex + 1) % self.playlist.length;
+        self.el.src = self.playlist[self.trackIndex];
+        self.el.load();
+        if (self.enabled && self.started) {
+          self.el.play().catch(function(){});
+        }
+      });
+
+      // Если браузер поставил на паузу — вернуть (кроме явного stop)
+      this.el.addEventListener('pause', function() {
+        if (self.enabled && self.started && !self.el.ended) {
+          setTimeout(function() {
+            if (self.enabled && self.el.paused) self.el.play().catch(function(){});
+          }, 100);
+        }
+      });
+
+      document.body.appendChild(this.el);
+
+      // Загружаем настройки из STATE
+      if (window.STATE && STATE.settings) {
+        if (STATE.settings.volume !== undefined) {
+          this.volume = Math.max(0, Math.min(1, STATE.settings.volume)) * 0.5;
+          this.el.volume = this.volume;
+        }
+        if (STATE.settings.soundEnabled !== undefined) {
+          this.enabled = STATE.settings.soundEnabled;
+        }
+      }
+    },
+
+    // Запустить (после первого тапа пользователя)
+    start: function() {
+      this.init();
+      if (!this.enabled) return;
+      if (this.started) return;
+      var self = this;
+      this.el.play().then(function() {
+        self.started = true;
+        console.log('[audio] play ok');
+      }).catch(function(e) {
+        console.warn('[audio] play failed:', e.message);
+      });
+    },
+
+    // Стоп
+    stop: function() {
+      if (this.el) {
+        this.el.pause();
+        this.el.currentTime = 0;
+        this.started = false;
+      }
+    },
+
+    // Вкл/выкл
+    toggle: function() {
+      this.init();
+      if (this.enabled) {
+        this.enabled = false;
+        this.el.pause();
+        this.started = false;
+        return false;
+      } else {
+        this.enabled = true;
+        this.el.play().catch(function(){});
+        this.started = true;
+        return true;
+      }
+    },
+
+    // Установить громкость 0..1
+    setVolume: function(v) {
+      this.volume = Math.max(0, Math.min(1, v));
+      if (this.el) this.el.volume = this.volume;
+    },
+
+    // Сменить трек (по индексу)
+    setTrackIndex: function(i) {
+      if (i < 0 || i >= this.playlist.length) return;
+      this.trackIndex = i;
+      this.init();
+      this.el.src = this.playlist[i];
+      this.el.load();
+      if (this.enabled && this.started) {
+        this.el.play().catch(function(){});
+      }
+    }
+  };
+
+  window.Audio_ = Audio_;
+
+  // Автозапуск по первому тапу/клику
+  var startOnce = function() {
+    Audio_.start();
+    document.removeEventListener('touchstart', startOnce);
+    document.removeEventListener('click', startOnce);
+  };
+  document.addEventListener('touchstart', startOnce, { once: false });
+  document.addEventListener('click', startOnce, { once: false });
+
+  console.log('[audio] модуль загружен (плейлист Lordran Tapes)');
+})();

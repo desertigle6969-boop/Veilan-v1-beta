@@ -1,0 +1,293 @@
+// ============================================================
+// ВЕЙЛАН — КАМНИ ДЛЯ АУГМЕНТАЦИИ (36 штук)
+// 6 базовых × 3 тира + 3 боевых × 3 + 3 особых × 3
+// ============================================================
+
+const GEMS = {
+
+  // ========== STR ==========
+  gem_str_1: {
+    id: 'gem_str_1', name: 'Малый камень Силы',
+    desc: 'Вправляется в оружие. Даёт +3 STR.',
+    lore: 'Осколок первой жилы. Пахнет железом.',
+    tier: 1, rarity: 'common', cost: 150,
+    stats: { str: 3 }, sprite: 'gem_str'
+  },
+  gem_str_2: {
+    id: 'gem_str_2', name: 'Средний камень Силы',
+    desc: 'Даёт +6 STR.',
+    lore: 'Из глубинных жил Рудников Ханна.',
+    tier: 2, rarity: 'uncommon', cost: 600,
+    stats: { str: 6 }, sprite: 'gem_str'
+  },
+  gem_str_3: {
+    id: 'gem_str_3', name: 'Великий камень Силы',
+    desc: 'Даёт +12 STR.',
+    lore: 'Такой камень держал Предтеча в руке, когда ковал мир.',
+    tier: 3, rarity: 'rare', cost: 2000,
+    stats: { str: 12 }, sprite: 'gem_str'
+  },
+
+  // ========== DEX ==========
+  gem_dex_1: {
+    id: 'gem_dex_1', name: 'Малый камень Ловкости',
+    desc: '+3 DEX.', lore: 'Тёплый на ощупь.', tier: 1, rarity: 'common', cost: 150,
+    stats: { dex: 3 }, sprite: 'gem_dex'
+  },
+  gem_dex_2: {
+    id: 'gem_dex_2', name: 'Средний камень Ловкости',
+    desc: '+6 DEX.', lore: 'Из рощ Аэлвина.', tier: 2, rarity: 'uncommon', cost: 600,
+    stats: { dex: 6 }, sprite: 'gem_dex'
+  },
+  gem_dex_3: {
+    id: 'gem_dex_3', name: 'Великий камень Ловкости',
+    desc: '+12 DEX.', lore: 'Двигается сам. Чуть-чуть.', tier: 3, rarity: 'rare', cost: 2000,
+    stats: { dex: 12 }, sprite: 'gem_dex'
+  },
+
+  // ========== CON ==========
+  gem_con_1: {
+    id: 'gem_con_1', name: 'Малый камень Стойкости',
+    desc: '+3 CON.', lore: 'Тяжёлый, как гора.', tier: 1, rarity: 'common', cost: 150,
+    stats: { con: 3 }, sprite: 'gem_con'
+  },
+  gem_con_2: {
+    id: 'gem_con_2', name: 'Средний камень Стойкости',
+    desc: '+6 CON.', lore: 'Сердце горы в миниатюре.', tier: 2, rarity: 'uncommon', cost: 600,
+    stats: { con: 6 }, sprite: 'gem_con'
+  },
+  gem_con_3: {
+    id: 'gem_con_3', name: 'Великий камень Стойкости',
+    desc: '+12 CON.', lore: 'Держит мир на месте. Пока цел.', tier: 3, rarity: 'rare', cost: 2000,
+    stats: { con: 12 }, sprite: 'gem_con'
+  },
+
+  // ========== INT ==========
+  gem_int_1: {
+    id: 'gem_int_1', name: 'Малый камень Разума',
+    desc: '+3 INT.', lore: 'Холодный и ясный.', tier: 1, rarity: 'common', cost: 150,
+    stats: { int: 3 }, sprite: 'gem_int'
+  },
+  gem_int_2: {
+    id: 'gem_int_2', name: 'Средний камень Разума',
+    desc: '+6 INT.', lore: 'Помнит чужие мысли.', tier: 2, rarity: 'uncommon', cost: 600,
+    stats: { int: 6 }, sprite: 'gem_int'
+  },
+  gem_int_3: {
+    id: 'gem_int_3', name: 'Великий камень Разума',
+    desc: '+12 INT.', lore: 'Внутри — библиотека Предтеч.', tier: 3, rarity: 'rare', cost: 2000,
+    stats: { int: 12 }, sprite: 'gem_int'
+  },
+
+  // ========== WIT ==========
+  gem_wit_1: {
+    id: 'gem_wit_1', name: 'Малый камень Воли',
+    desc: '+3 WIT.', lore: 'Заставляет сердце биться чаще.', tier: 1, rarity: 'common', cost: 150,
+    stats: { wit: 3 }, sprite: 'gem_wit'
+  },
+  gem_wit_2: {
+    id: 'gem_wit_2', name: 'Средний камень Воли',
+    desc: '+6 WIT.', lore: 'Горит, когда ты в опасности.', tier: 2, rarity: 'uncommon', cost: 600,
+    stats: { wit: 6 }, sprite: 'gem_wit'
+  },
+  gem_wit_3: {
+    id: 'gem_wit_3', name: 'Великий камень Воли',
+    desc: '+12 WIT.', lore: 'Кусочек осколка Зари.', tier: 3, rarity: 'rare', cost: 2000,
+    stats: { wit: 12 }, sprite: 'gem_wit'
+  },
+
+  // ========== MEN ==========
+  gem_men_1: {
+    id: 'gem_men_1', name: 'Малый камень Духа',
+    desc: '+3 MEN.', lore: 'Успокаивает.', tier: 1, rarity: 'common', cost: 150,
+    stats: { men: 3 }, sprite: 'gem_men'
+  },
+  gem_men_2: {
+    id: 'gem_men_2', name: 'Средний камень Духа',
+    desc: '+6 MEN.', lore: 'Отгоняет злые сны.', tier: 2, rarity: 'uncommon', cost: 600,
+    stats: { men: 6 }, sprite: 'gem_men'
+  },
+  gem_men_3: {
+    id: 'gem_men_3', name: 'Великий камень Духа',
+    desc: '+12 MEN.', lore: 'Слышит шёпот мёртвых богов.', tier: 3, rarity: 'rare', cost: 2000,
+    stats: { men: 12 }, sprite: 'gem_men'
+  },
+
+  // ========== КРИТ ==========
+  gem_crit_1: {
+    id: 'gem_crit_1', name: 'Малый камень Крита',
+    desc: '+2% шанс критического удара.', lore: 'Острый, как мысль убийцы.', tier: 1, rarity: 'common', cost: 200,
+    stats: { crit: 2 }, sprite: 'gem_crit'
+  },
+  gem_crit_2: {
+    id: 'gem_crit_2', name: 'Средний камень Крита',
+    desc: '+4% крита.', lore: 'Режет даже взгляд.', tier: 2, rarity: 'uncommon', cost: 800,
+    stats: { crit: 4 }, sprite: 'gem_crit'
+  },
+  gem_crit_3: {
+    id: 'gem_crit_3', name: 'Великий камень Крита',
+    desc: '+8% крита.', lore: 'Создан из последнего вздоха воина.', tier: 3, rarity: 'rare', cost: 2500,
+    stats: { crit: 8 }, sprite: 'gem_crit'
+  },
+
+  // ========== УКЛОНЕНИЕ ==========
+  gem_eva_1: {
+    id: 'gem_eva_1', name: 'Малый камень Тени',
+    desc: '+2% уклонения.', lore: 'Холодный, скользкий.', tier: 1, rarity: 'common', cost: 200,
+    stats: { eva: 2 }, sprite: 'gem_eva'
+  },
+  gem_eva_2: {
+    id: 'gem_eva_2', name: 'Средний камень Тени',
+    desc: '+4% уклонения.', lore: 'Трудно удержать в руке.', tier: 2, rarity: 'uncommon', cost: 800,
+    stats: { eva: 4 }, sprite: 'gem_eva'
+  },
+  gem_eva_3: {
+    id: 'gem_eva_3', name: 'Великий камень Тени',
+    desc: '+8% уклонения.', lore: 'Он уже уклонился. Ты просто этого не видел.', tier: 3, rarity: 'rare', cost: 2500,
+    stats: { eva: 8 }, sprite: 'gem_eva'
+  },
+
+  // ========== ТОЧНОСТЬ ==========
+  gem_acc_1: {
+    id: 'gem_acc_1', name: 'Малый камень Точности',
+    desc: '+3% точности.', lore: 'Светится ровным светом.', tier: 1, rarity: 'common', cost: 200,
+    stats: { acc: 3 }, sprite: 'gem_acc'
+  },
+  gem_acc_2: {
+    id: 'gem_acc_2', name: 'Средний камень Точности',
+    desc: '+6% точности.', lore: 'Не даёт промахнуться.', tier: 2, rarity: 'uncommon', cost: 800,
+    stats: { acc: 6 }, sprite: 'gem_acc'
+  },
+  gem_acc_3: {
+    id: 'gem_acc_3', name: 'Великий камень Точности',
+    desc: '+10% точности.', lore: 'Видит сердце цели за версту.', tier: 3, rarity: 'rare', cost: 2500,
+    stats: { acc: 10 }, sprite: 'gem_acc'
+  },
+
+  // ========== HP ==========
+  gem_hp_1: {
+    id: 'gem_hp_1', name: 'Малый камень Жизни',
+    desc: '+30 к максимуму HP.', lore: 'Тёплый, живой.', tier: 1, rarity: 'common', cost: 200,
+    stats: { hp: 30 }, sprite: 'gem_hp'
+  },
+  gem_hp_2: {
+    id: 'gem_hp_2', name: 'Средний камень Жизни',
+    desc: '+60 к максимуму HP.', lore: 'Бьётся, как сердце.', tier: 2, rarity: 'uncommon', cost: 800,
+    stats: { hp: 60 }, sprite: 'gem_hp'
+  },
+  gem_hp_3: {
+    id: 'gem_hp_3', name: 'Великий камень Жизни',
+    desc: '+120 к максимуму HP.', lore: 'Капля крови Нирны.', tier: 3, rarity: 'rare', cost: 2500,
+    stats: { hp: 120 }, sprite: 'gem_hp'
+  },
+
+  // ========== MP ==========
+  gem_mp_1: {
+    id: 'gem_mp_1', name: 'Малый камень Силы Духа',
+    desc: '+20 к максимуму MP.', lore: 'Прохладный, как родник.', tier: 1, rarity: 'common', cost: 200,
+    stats: { mp: 20 }, sprite: 'gem_mp'
+  },
+  gem_mp_2: {
+    id: 'gem_mp_2', name: 'Средний камень Силы Духа',
+    desc: '+40 к максимуму MP.', lore: 'Пульсирует в такт мыслям.', tier: 2, rarity: 'uncommon', cost: 800,
+    stats: { mp: 40 }, sprite: 'gem_mp'
+  },
+  gem_mp_3: {
+    id: 'gem_mp_3', name: 'Великий камень Силы Духа',
+    desc: '+80 к максимуму MP.', lore: 'Внутри — море магии.', tier: 3, rarity: 'rare', cost: 2500,
+    stats: { mp: 80 }, sprite: 'gem_mp'
+  },
+
+  // ========== СОПРОТИВЛЕНИЕ ДЕБАФФАМ ==========
+  gem_resist_1: {
+    id: 'gem_resist_1', name: 'Малый камень Стойкости Духа',
+    desc: '+5% сопротивления дебаффам.', lore: 'Отгоняет порчу.', tier: 1, rarity: 'common', cost: 250,
+    stats: { debuffResist: 5 }, sprite: 'gem_resist'
+  },
+  gem_resist_2: {
+    id: 'gem_resist_2', name: 'Средний камень Стойкости Духа',
+    desc: '+10% сопротивления дебаффам.', lore: 'Шёпот Мора не пройдёт.', tier: 2, rarity: 'uncommon', cost: 900,
+    stats: { debuffResist: 10 }, sprite: 'gem_resist'
+  },
+  gem_resist_3: {
+    id: 'gem_resist_3', name: 'Великий камень Стойкости Духа',
+    desc: '+20% сопротивления дебаффам.', lore: 'Разве что сам Тэрн сломает.', tier: 3, rarity: 'rare', cost: 3000,
+    stats: { debuffResist: 20 }, sprite: 'gem_resist'
+  }
+
+};
+
+// ============================================================
+// ФУНКЦИИ
+// ============================================================
+
+function getGem(id) { return GEMS[id] || null; }
+
+function getGemsByTier(tier) {
+  return Object.values(GEMS).filter(g => g.tier === tier);
+}
+
+function getGemsByStat(stat) {
+  return Object.values(GEMS).filter(g => g.stats && g.stats[stat]);
+}
+
+function getAllGems() { return Object.values(GEMS); }
+
+// Продажа
+function getGemSellPrice(gem) {
+  return Math.floor((gem.cost || 0) * CONFIG.gold.sellPriceShare);
+}
+
+// Случайный камень для дропа (по уровню моба)
+function rollGemByLevel(level) {
+  let tier = 1;
+  if (level >= 40) tier = 3;
+  else if (level >= 15) tier = 2;
+
+  const pool = getGemsByTier(tier);
+  if (!pool || pool.length === 0) {
+    // Fallback — любой камень
+    const all = getAllGems();
+    if (all.length === 0) return null;
+    return all[Math.floor(Math.random() * all.length)];
+  }
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+// ============================================================
+// ЭКСПОРТ
+// ============================================================
+
+window.Gems = {
+  getGem, getGemsByTier, getGemsByStat, getAllGems,
+  getGemSellPrice, rollGemByLevel
+};
+
+
+// ============================================================
+// РЕГИСТРАЦИЯ КАМНЕЙ В ITEMS
+// Камни — тоже предметы. Их можно продавать, хранить в сумке.
+// ============================================================
+
+(function() {
+  if (typeof ITEMS === 'undefined') {
+    console.warn('[gems] ITEMS не найден, регистрация камней пропущена');
+    return;
+  }
+  for (const gemId in GEMS) {
+    const gem = GEMS[gemId];
+    ITEMS[gemId] = {
+      id: gem.id,
+      name: gem.name,
+      desc: gem.desc,
+      lore: gem.lore,
+      type: 'gem',
+      tier: gem.tier,
+      rarity: gem.rarity,
+      cost: gem.cost,
+      stack: 20,
+      stats: gem.stats,
+      sprite: gem.sprite
+    };
+  }
+})();

@@ -1,0 +1,1932 @@
+// ============================================================
+// ВЕЙЛАН — БОЙ
+// Часть 1: структура, юниты, резонанс, порядок ходов, жизненный цикл
+// ============================================================
+
+const COMBAT_MAX_TURNS = 999;
+
+// ============================================================
+// СОЗДАНИЕ И СТАРТ БОЯ
+// ============================================================
+
+function createBattle(playerParty, enemyParty, options) {
+  const opts = options || {};
+  const battle = {
+    id: 'battle_' + Date.now(),
+    turn: 0,
+    round: 1,
+    maxTurns: COMBAT_MAX_TURNS,
+    status: 'active',           // active | victory | defeat | fled | draw
+    startedAt: Date.now(),
+
+    playerUnits: [],
+    enemyUnits: [],
+
+    turnOrder: [],              // очередь хода в текущем раунде
+    currentUnitId: null,
+    turnStarted: false,         // ждём ли действие игрока
+
+    log: [],
+
+    zoneId: opts.zoneId || null,
+    subId: opts.subId || null,
+    isBoss: !!opts.isBoss,
+
+    rewards: null               // заполняется при победе
+  };
+
+  // Игроки
+  for (const pu of playerParty) {
+    if (pu.isHero && pu.ref) {
+      battle.playerUnits.push(createHeroUnit(pu.ref));
+    } else if (pu.isMerc && pu.ref) {
+      battle.playerUnits.push(createMercUnit(pu.ref));
+    }
+  }
+
+  // Враги
+  for (const eu of enemyParty) {
+    // Если это ПК — используем PvP.createPvPUnit
+    if (eu.isPvP && eu.pvpData && window.PvP) {
+      battle.enemyUnits.push(PvP.createPvPUnit(eu.pvpData));
+      continue;
+    }
+    const mob = MOBS[eu.mobId];
+    if (!mob) {
+      logBattle(battle, 'Моб не найден: ' + eu.mobId, 'warn');
+      continue;
+    }
+    battle.enemyUnits.push(createEnemyUnit(mob, eu));
+  }
+
+  // Стартовый резонанс — все с 0 (по типу юнита)
+  const allUnits = battle.playerUnits.concat(battle.enemyUnits);
+  for (const u of allUnits) {
+    if (u.isHero) u.resonance = CONFIG.combat.startingResonanceHero;
+    else if (u.isMerc) u.resonance = CONFIG.combat.startingResonanceMerc;
+    else if (u.isBoss) u.resonance = CONFIG.combat.startingResonanceBoss;
+    else if (u.isElite) u.resonance = CONFIG.combat.startingResonanceElite;
+    else u.resonance = CONFIG.combat.startingResonanceMob;
+
+    u.buffs = [];
+    u.statuses = [];
+    u.defending = false;
+    u.resonanceReady = false;
+    u._resonanceBuffActive = false;
+  }
+
+  logBattle(battle, 'Бой начался.', 'sys');
+  logBattle(battle, 'Противники: ' + battle.enemyUnits.map(u => u.name).join(', '), 'sys');
+
+  return battle;
+}
+
+// Запуск боя — считает первый ход
+function startBattle(battle) {
+  if (!battle) return null;
+  battle.round = 1;
+  battle.turn = 0;
+  const u = getNextUnit(battle);
+  if (!u) {
+    checkBattleEnd(battle);
+    return null;
+  }
+  logBattle(battle, 'Ход: ' + u.name, 'sys');
+  return u;
+}
+
+// ============================================================
+// СОЗДАНИЕ ЮНИТОВ
+// ============================================================
+
+function createHeroUnit(hero) {
+  const derived = Hero.getDerivedStats(hero);
+  return {
+    unitId: 'hero',
+    isHero: true,
+    isMerc: false,
+    isEnemy: false,
+    name: hero.name,
+    sprite: 'HERO',
+    ref: hero,
+
+    hp: hero.hp,
+    maxHp: hero.maxHp,
+    mp: hero.mp,
+    maxMp: hero.maxMp,
+    sp: hero.sp,
+    maxSp: hero.maxSp,
+    resonance: 0,
+
+    atk: derived.atk,
+    mag: derived.mag,
+    def: derived.def,
+    mdef: derived.mdef,
+    spd: derived.spd,
+    crit: derived.crit,
+    eva: derived.eva,
+    acc: derived.acc,
+
+    skillIds: (hero.skillIds || []).slice(),
+
+    buffs: [],
+    statuses: [],
+
+    defending: false,
+    resonanceReady: false,
+    _resonanceBuffActive: false
+  };
+}
+
+function createMercUnit(merc) {
+  return {
+    unitId: 'merc_' + (merc.id || Math.random().toString(36).slice(2, 6)),
+    isHero: false,
+    isMerc: true,
+    isEnemy: false,
+    name: merc.name || 'Наёмник',
+    sprite: merc.sprite || 'MERC',
+    ref: merc,
+
+    hp: merc.hp || 100,
+    maxHp: merc.maxHp || 100,
+    mp: merc.mp || 30,
+    maxMp: merc.maxMp || 30,
+    sp: 100,
+    maxSp: 100,
+    resonance: 0,
+
+    atk: merc.atk || 10,
+    mag: merc.mag || 5,
+    def: merc.def || 5,
+    mdef: merc.mdef || 5,
+    spd: merc.spd || 12,
+    crit: merc.crit || 5,
+    eva: merc.eva || 5,
+    acc: merc.acc || 95,
+
+    skillIds: merc.skillIds || [],
+
+    buffs: [],
+    statuses: [],
+
+    defending: false,
+    resonanceReady: false,
+    _resonanceBuffActive: false
+  };
+}
+
+function createEnemyUnit(mob, spawnData) {
+  const maxHp = spawnData.hp || mob.hp;
+  const isElite = mob.aiProfile === 'elite';
+  const isBoss = !!mob.isBoss || mob.aiProfile === 'boss';
+
+  return {
+    unitId: 'enemy_' + mob.id + '_' + Math.random().toString(36).slice(2, 6),
+    isEnemy: true,
+    isBoss: isBoss,
+    isElite: isElite,
+    mobId: mob.id,
+    isSecret: !!mob.isSecret,
+    name: mob.name,
+    sprite: mob.sprite,
+    level: mob.level,
+
+    hp: maxHp,
+    maxHp: maxHp,
+
+    atk: mob.atk,
+    mag: mob.atk,
+    def: mob.def,
+    mdef: mob.def,
+    spd: mob.spd,
+    crit: 5,
+    eva: mob.eva,
+    acc: 100,
+
+    // ВАЖНО: у боссов mob.skills — массив, у обычных mob.skill — строка
+    skillIds: (mob.skills && mob.skills.length > 0)
+      ? mob.skills.slice()
+      : (mob.skill ? [mob.skill] : []),
+
+    loot: mob.loot || [],
+    exp: mob.exp,
+    gold: mob.gold,
+
+    mp: 9999,
+    sp: 9999,
+    resonance: 0,
+    buffs: [],
+    statuses: [],
+    defending: false,
+    resonanceReady: false,
+    _resonanceBuffActive: false,
+
+    phases: mob.phases || null,
+    currentPhase: 0,
+    summons: mob.summons || null,
+
+    aiProfile: mob.aiProfile || 'trash'
+  };
+}
+
+// ============================================================
+// ПОИСК ЮНИТОВ
+// ============================================================
+
+function findUnit(battle, unitId) {
+  if (!battle) return null;
+  for (const u of battle.playerUnits) if (u.unitId === unitId) return u;
+  for (const u of battle.enemyUnits) if (u.unitId === unitId) return u;
+  return null;
+}
+
+function getHeroUnit(battle) {
+  return battle.playerUnits.find(u => u.isHero);
+}
+
+function getLivingEnemies(battle) {
+  return battle.enemyUnits.filter(u => u.hp > 0);
+}
+
+function getLivingAllies(battle) {
+  return battle.playerUnits.filter(u => u.hp > 0);
+}
+
+function isTeamAlive(units) {
+  return units.some(u => u.hp > 0);
+}
+
+// ============================================================
+// РЕЗОНАНС
+// ============================================================
+
+function addResonance(unit, amount) {
+  if (!unit || unit.hp <= 0) return;
+  unit.resonance = Math.min(CONFIG.combat.resonanceMax, unit.resonance + amount);
+  if (unit.resonance >= CONFIG.combat.resonanceMax) {
+    unit.resonanceReady = true;
+  }
+}
+
+function consumeTurnResonance(unit) {
+  if (!unit) return;
+  unit.resonance = Math.max(0, unit.resonance - CONFIG.combat.resonanceCostPerTurn);
+  // Если резонанс ушёл ниже максимума — флаг "готов" сбрасывается
+  if (unit.resonance < CONFIG.combat.resonanceMax) {
+    unit.resonanceReady = false;
+  }
+}
+
+function activateResonance(unit) {
+  if (!unit || !unit.resonanceReady) return false;
+  unit.resonanceReady = false;
+  unit.resonance = 0;
+  unit._resonanceBuffActive = true;
+  return true;
+}
+
+function gainResonanceOnHit(unit, wasCrit) {
+  addResonance(unit, CONFIG.combat.resonancePerHit);
+  if (wasCrit) addResonance(unit, CONFIG.combat.resonancePerCrit - CONFIG.combat.resonancePerHit);
+}
+
+function gainResonanceOnKill(unit) {
+  addResonance(unit, CONFIG.combat.resonancePerKill);
+}
+
+function gainResonanceOnSkill(unit) {
+  addResonance(unit, CONFIG.combat.resonancePerSkill);
+}
+
+function gainResonanceOnDamageTaken(unit, dmgPct) {
+  addResonance(unit, dmgPct * CONFIG.combat.resonancePerHpLost * 100);
+}
+
+// ============================================================
+// ПОРЯДОК ХОДОВ
+// ============================================================
+
+function calculateTurnOrder(battle) {
+  const all = battle.playerUnits.concat(battle.enemyUnits).filter(u => u.hp > 0);
+  // Сортировка строго по SPD (резонанс — это "ульта", а не очередь)
+  all.sort((a, b) => {
+    if (b.spd !== a.spd) return b.spd - a.spd;
+    // при равенстве — герой вперёд
+    if (a.isHero && !b.isHero) return -1;
+    if (b.isHero && !a.isHero) return 1;
+    return 0;
+  });
+  battle.turnOrder = all.map(u => u.unitId);
+  return battle.turnOrder;
+}
+
+function getNextUnit(battle) {
+  if (!battle || battle.status !== 'active') return null;
+
+  if (battle.turnOrder.length === 0 || battle._turnIdx === undefined) {
+    calculateTurnOrder(battle);
+    battle._turnIdx = 0;
+  }
+  if (battle.turnOrder.length === 0) return null;
+
+  // Ищем следующего живого, начиная с _turnIdx
+  let tries = 0;
+  while (tries < battle.turnOrder.length) {
+    if (battle._turnIdx >= battle.turnOrder.length) {
+      battle._turnIdx = 0;
+      battle.round = (battle.round || 1) + 1;
+    }
+    const id = battle.turnOrder[battle._turnIdx];
+    battle._turnIdx++;
+    const u = findUnit(battle, id);
+    if (u && u.hp > 0) {
+      battle.currentUnitId = id;
+      battle.turnStarted = true;
+      return u;
+    }
+    tries++;
+  }
+  return null;
+}
+
+// ============================================================
+// ЗАВЕРШЕНИЕ ХОДА
+// ============================================================
+
+// Вызывается ПОСЛЕ того, как юнит сделал действие
+function endTurn(battle, unitId) {
+  if (!battle || battle.status !== 'active') return;
+
+  const unit = findUnit(battle, unitId);
+  if (!unit) return;
+
+  // 1. Пассивное накопление: +SPD / divisor
+  const passiveGain = Math.floor(unit.spd / CONFIG.combat.resonancePassiveDivisor);
+  if (passiveGain > 0) addResonance(unit, passiveGain);
+
+  // 2. Защита даёт +5
+  if (unit.defending) {
+    addResonance(unit, CONFIG.combat.resonancePerDefend);
+  } else {
+    // Разная стоимость хода: 0 для игроков, 20 для мобов
+    let cost = CONFIG.combat.resonanceCostPerTurnMob;
+    if (unit.isHero) cost = CONFIG.combat.resonanceCostPerTurnHero;
+    else if (unit.isMerc) cost = CONFIG.combat.resonanceCostPerTurnMerc;
+    if (cost > 0) {
+      unit.resonance = Math.max(0, unit.resonance - cost);
+      if (unit.resonance < CONFIG.combat.resonanceMax) {
+        unit.resonanceReady = false;
+      }
+    }
+  }
+
+  // 3. Сбрасываем временные флаги
+  unit.defending = false;
+  unit._resonanceBuffActive = false;
+
+  // 3. Тикаем кулдауны скиллов (у героя)
+  if (unit.isHero && unit.ref && unit.ref.skillCooldowns) {
+    for (const sid in unit.ref.skillCooldowns) {
+      if (unit.ref.skillCooldowns[sid] > 0) {
+        unit.ref.skillCooldowns[sid]--;
+      }
+    }
+  }
+  // У мобов — кулдауны в объекте юнита
+  if (unit.skillCooldowns) {
+    for (const sid in unit.skillCooldowns) {
+      if (unit.skillCooldowns[sid] > 0) unit.skillCooldowns[sid]--;
+    }
+  }
+
+  // 4. Проверяем конец боя
+  if (checkBattleEnd(battle)) return;
+
+  // 5. Проверяем лимит ходов
+  battle.turn++;
+  if (battle.turn >= battle.maxTurns) {
+    battle.status = 'draw';
+    logBattle(battle, 'Бой затянулся. Ничья.', 'warn');
+    return;
+  }
+
+  // 6. Определяем следующего
+  const next = getNextUnit(battle);
+  if (!next) {
+    checkBattleEnd(battle);
+    return;
+  }
+
+  logBattle(battle, 'Ход: ' + next.name, 'sys');
+
+  // Реген маны герою в начале его хода: +3 MP
+  if (next && next.isHero && next.mp !== undefined && next.maxMp !== undefined) {
+    if (next.mp < next.maxMp) {
+      const gain = Math.min(3, next.maxMp - next.mp);
+      if (gain > 0) {
+        next.mp += gain;
+        // Синхронизация с hero.ref
+        if (next.ref) next.ref.mp = next.mp;
+        logBattle(battle, next.name + ': +' + gain + ' MP', 'heal');
+      }
+    }
+  }
+}
+
+// ============================================================
+// ПРОВЕРКА КОНЦА БОЯ
+// ============================================================
+
+function checkBattleEnd(battle) {
+  if (!battle || battle.status !== 'active') return true;
+
+  const enemiesAlive = getLivingEnemies(battle).length;
+  const alliesAlive = getLivingAllies(battle).length;
+
+  if (enemiesAlive === 0) {
+    battle.status = 'victory';
+    logBattle(battle, 'Победа!', 'sys');
+    if (window.Combat && window.Combat.calcRewards) {
+      battle.rewards = window.Combat.calcRewards(battle);
+    }
+    return true;
+  }
+  if (alliesAlive === 0) {
+    battle.status = 'defeat';
+    logBattle(battle, 'Поражение.', 'warn');
+    return true;
+  }
+  return false;
+}
+
+// ============================================================
+// ЛОГ
+// ============================================================
+
+function logBattle(battle, text, type) {
+  if (!battle) return;
+  battle.log.push({
+    text: text,
+    type: type || 'normal',
+    turn: battle.turn,
+    time: Date.now()
+  });
+  if (battle.log.length > 100) battle.log.shift();
+}
+
+// ============================================================
+// ЭКСПОРТ (Часть 1)
+// ============================================================
+
+window.Combat = window.Combat || {};
+
+// ============================================================
+// БОЕВЫЕ ЭФФЕКТЫ — вспышка + всплывающие цифры
+// ============================================================
+function showBattleEffect(unitId, type, value) {
+  if (!window.BattleUI || !BattleUI.el) return;
+  var card = BattleUI.el.querySelector('[data-unit-id="' + unitId + '"]');
+  if (!card) return;
+
+  // === Вспышка карточки ===
+  if (type === 'dmg_crit') {
+    card.classList.add('flash-crit');
+    setTimeout(function() { card.classList.remove('flash-crit'); }, 220);
+  } else if (type === 'dmg' || type === 'miss') {
+    card.classList.add('flash-hit');
+    setTimeout(function() { card.classList.remove('flash-hit'); }, 180);
+  }
+
+
+  // === Всплывающая цифра ===
+  var floaters = card.querySelector('.floaters');
+  if (!floaters) return;
+
+  var el = document.createElement('div');
+  el.className = 'dmg-floater';
+
+  if (type === 'dmg_crit') {
+    el.classList.add('dmg-crit');
+    el.textContent = value + '!';
+  } else if (type === 'dmg') {
+    el.classList.add('dmg-normal');
+    el.textContent = '' + value;
+  } else if (type === 'heal') {
+    el.classList.add('dmg-heal');
+    el.textContent = '+' + value;
+  } else if (type === 'miss') {
+    el.classList.add('dmg-miss');
+    el.textContent = 'мимо';
+  } else if (type === 'status') {
+    el.classList.add('dmg-status');
+    el.textContent = value;
+  } else {
+    el.classList.add('dmg-normal');
+    el.textContent = '' + value;
+  }
+
+  // Небольшая случайная задержка, чтобы цифры не накладывались
+  el.style.left = (50 + (Math.random() * 20 - 10)) + '%';
+  floaters.appendChild(el);
+
+  setTimeout(function() {
+    if (el.parentNode) el.parentNode.removeChild(el);
+  }, 1100);
+}
+
+Object.assign(window.Combat, {
+  COMBAT_MAX_TURNS,
+  createBattle,
+  startBattle,
+  createHeroUnit,
+  createMercUnit,
+  createEnemyUnit,
+  findUnit,
+  getHeroUnit,
+  getLivingEnemies,
+  getLivingAllies,
+  isTeamAlive,
+  addResonance,
+  consumeTurnResonance,
+  activateResonance,
+  gainResonanceOnHit,
+  gainResonanceOnKill,
+  gainResonanceOnSkill,
+  gainResonanceOnDamageTaken,
+  calculateTurnOrder,
+  getNextUnit,
+  endTurn,
+  checkBattleEnd,
+  logBattle
+});
+
+
+// ============================================================
+// ЧАСТЬ 2 — УРОН, СТАТУСЫ, СКИЛЛЫ, БАФФЫ
+// ============================================================
+
+// ============================================================
+// ПРОВЕРКИ СОСТОЯНИЙ
+// ============================================================
+
+function hasStatus(unit, statusId) {
+  if (!unit || !unit.statuses) return false;
+  return unit.statuses.some(s => s.id === statusId);
+}
+
+function isStunned(unit) {
+  return hasStatus(unit, 'stun') || hasStatus(unit, 'freeze');
+}
+
+function isSilenced(unit) {
+  return hasStatus(unit, 'silence');
+}
+
+function canAct(unit) {
+  if (!unit || unit.hp <= 0) return false;
+  if (isStunned(unit)) return false;
+  return true;
+}
+
+// ============================================================
+// СТАТУСЫ — КАТЕГОРИИ СТАКА
+// ============================================================
+
+const STACK_REFRESH = ['burn', 'poison', 'bleed', 'regen', 'shield', 'taunt', 'martyr', 'thorns'];
+const STACK_REPLACE = ['stun', 'freeze'];
+const STACK_UPTO_3 = ['shock', 'slow', 'silence', 'blind', 'atk_down', 'def_down', 'rage'];
+
+function applyStatus(target, statusId, duration, opts) {
+  if (!target || target.hp <= 0) return false;
+  const o = opts || {};
+  if (!target.statuses) target.statuses = [];
+
+  // ЗВУК ЩИТА (только герою, не мобам)
+  if (statusId === 'shield' && window.SFX && !target.isEnemy && _sfxThrottle('shield', 250)) {
+    SFX.play('shield');
+  }
+
+  const dur = duration || 1;
+  const value = o.value || 0;
+  const fields = o.fields || {};
+
+  if (STACK_REPLACE.includes(statusId)) {
+    target.statuses = target.statuses.filter(s => s.id !== statusId);
+    target.statuses.push({ id: statusId, duration: dur, maxDuration: dur, value, fields });
+    return true;
+  }
+
+  if (STACK_REFRESH.includes(statusId)) {
+    const existing = target.statuses.find(s => s.id === statusId);
+    if (existing) {
+      existing.duration = Math.max(existing.duration, dur);
+      existing.value = Math.max(existing.value || 0, value);
+      existing.fields = Object.assign({}, existing.fields || {}, fields);
+      return true;
+    }
+    target.statuses.push({ id: statusId, duration: dur, maxDuration: dur, value, fields });
+    return true;
+  }
+
+  if (STACK_UPTO_3.includes(statusId)) {
+    const existing = target.statuses.filter(s => s.id === statusId);
+    if (existing.length >= 3) {
+      existing[0].duration = Math.max(existing[0].duration, dur);
+      return true;
+    }
+    target.statuses.push({ id: statusId, duration: dur, maxDuration: dur, value, fields });
+    return true;
+  }
+
+  if (!target.statuses.some(s => s.id === statusId)) {
+    target.statuses.push({ id: statusId, duration: dur, maxDuration: dur, value, fields });
+  }
+  return true;
+}
+
+function removeStatus(target, statusId) {
+  if (!target || !target.statuses) return false;
+  const before = target.statuses.length;
+  target.statuses = target.statuses.filter(s => s.id !== statusId);
+  return target.statuses.length < before;
+}
+
+function cleanseDebuffs(target) {
+  if (!target || !target.statuses) return 0;
+  const debuffs = ['burn', 'poison', 'bleed', 'freeze', 'stun', 'shock', 'silence', 'slow', 'blind', 'atk_down', 'def_down'];
+  const before = target.statuses.length;
+  target.statuses = target.statuses.filter(s => !debuffs.includes(s.id));
+  return before - target.statuses.length;
+}
+
+// ============================================================
+// СТАТУСЫ — ТИКИ В НАЧАЛЕ ХОДА
+// ============================================================
+
+function processStatuses(battle, unit) {
+  if (!battle || !unit || !unit.statuses || unit.statuses.length === 0) return;
+
+  const expired = [];
+
+  for (const s of unit.statuses) {
+    switch (s.id) {
+      case 'burn':
+      case 'bleed': {
+        const dmg = Math.floor(unit.maxHp * 0.04);
+        applyRawDamage(battle, unit, dmg);
+        logBattle(battle, unit.name + ': ' + dmg + ' от ' + (s.id === 'burn' ? 'поджога' : 'кровотечения'), 'dmg');
+        break;
+      }
+      case 'poison': {
+        const dmg = Math.floor(unit.maxHp * 0.03);
+        applyRawDamage(battle, unit, dmg);
+        logBattle(battle, unit.name + ': ' + dmg + ' от яда', 'dmg');
+        break;
+      }
+      case 'regen': {
+        const heal = Math.floor(unit.maxHp * (s.value || 0.05));
+        const actual = Math.min(heal, unit.maxHp - unit.hp);
+        unit.hp += actual;
+        logBattle(battle, unit.name + ': +' + actual + ' HP (регенерация)', 'heal');
+        break;
+      }
+    }
+    s.duration--;
+    if (s.duration <= 0) expired.push(s.id);
+  }
+
+  for (const id of expired) {
+    unit.statuses = unit.statuses.filter(s => s.id !== id);
+  }
+}
+
+// ============================================================
+// БАФФЫ — ПОЛЯ И МОДИФИКАТОРЫ
+// ============================================================
+
+function extractStatusFields(status) {
+  if (!status) return {};
+  const f = {};
+  if (status.defBuff) f.defBuff = status.defBuff;
+  if (status.atkBuff) f.atkBuff = status.atkBuff;
+  if (status.magBuff) f.magBuff = status.magBuff;
+  if (status.spdBuff) f.spdBuff = status.spdBuff;
+  if (status.critBuff) f.critBuff = status.critBuff;
+  if (status.evaBuff) f.evaBuff = status.evaBuff;
+  if (status.hpDrainPct) f.hpDrainPct = status.hpDrainPct;
+  if (status.dmgReduction) f.dmgReduction = status.dmgReduction;
+  if (status.petAtkBuff) f.petAtkBuff = status.petAtkBuff;
+  if (status.petHpBuff) f.petHpBuff = status.petHpBuff;
+  if (status.petDmgBuff) f.petDmgBuff = status.petDmgBuff;
+  if (status.petGuard) f.petGuard = status.petGuard;
+  if (status.defDebuff) f.defDebuff = status.defDebuff;
+  if (status.atkDebuff) f.atkDebuff = status.atkDebuff;
+  if (status.spdDebuff) f.spdDebuff = status.spdDebuff;
+  if (status.value !== undefined) f.value = status.value;
+  return f;
+}
+
+function getStatusModifiers(unit) {
+  const mods = {
+    atkPct: 0, defPct: 0, magPct: 0, spdPct: 0,
+    critAdd: 0, evaPct: 0, accPenalty: 0,
+    dmgReduction: 0, hpDrainPct: 0
+  };
+  if (!unit || !unit.statuses) return mods;
+
+  for (const s of unit.statuses) {
+    const f = s.fields || {};
+    if (f.atkBuff) mods.atkPct += f.atkBuff;
+    if (f.atkDebuff) mods.atkPct += f.atkDebuff;
+    if (f.defBuff) mods.defPct += f.defBuff;
+    if (f.defDebuff) mods.defPct += f.defDebuff;
+    if (f.magBuff) mods.magPct += f.magBuff;
+    if (f.spdBuff) mods.spdPct += f.spdBuff;
+    if (f.spdDebuff) mods.spdPct += f.spdDebuff;
+    if (f.critBuff) mods.critAdd += f.critBuff;
+    if (f.evaBuff) mods.evaPct += f.evaBuff;
+    if (f.dmgReduction) mods.dmgReduction += f.dmgReduction;
+
+    if (s.id === 'shock') mods.accPenalty += 30;
+    if (s.id === 'blind') mods.accPenalty += 30;
+    if (s.id === 'slow') mods.spdPct -= 30;
+  }
+
+  // Пассивные бонусы от резонанса
+  const resBonuses = getResonanceBonuses(unit);
+  mods.atkPct += resBonuses.atk;
+  mods.defPct += resBonuses.def;
+  mods.critAdd += resBonuses.crit;
+
+  return mods;
+}
+
+// ============================================================
+// ПАССИВНЫЕ БОНУСЫ РЕЗОНАНСА
+// ============================================================
+
+// Возвращает бонусы от текущего резонанса юнита
+function getResonanceBonuses(unit) {
+  const result = { atk: 0, def: 0, crit: 0, label: 'Покой' };
+  if (!unit || unit.hp <= 0) return result;
+
+  const tiers = CONFIG.combat.resonanceTiers;
+  for (const tier of tiers) {
+    if (unit.resonance >= tier.min) {
+      result.atk = tier.atk;
+      result.def = tier.def;
+      result.crit = tier.crit;
+      result.label = tier.label;
+      return result;
+    }
+  }
+  return result;
+}
+
+// ============================================================
+// УРОН
+// ============================================================
+
+function applyRawDamage(battle, target, amount) {
+  if (!target || target.hp <= 0) return 0;
+  const dmg = Math.max(1, Math.floor(amount));
+  target.hp = Math.max(0, target.hp - dmg);
+  gainResonanceOnDamageTaken(target, dmg / target.maxHp);
+  return dmg;
+}
+
+function calcDamage(attacker, defender, opts) {
+  const o = opts || {};
+  const power = o.power || 1.0;
+  const type = o.type || 'phys';
+
+  const atkMods = getStatusModifiers(attacker);
+  const defMods = getStatusModifiers(defender);
+
+  const attackerAtk = type === 'phys'
+    ? attacker.atk * (1 + atkMods.atkPct)
+    : attacker.mag * (1 + atkMods.magPct);
+  const defenderDef = type === 'phys'
+    ? defender.def * (1 + defMods.defPct)
+    : defender.mdef * (1 + defMods.defPct);
+
+  let base = attackerAtk * power - defenderDef * 0.5;
+  base = Math.max(1, base);
+  base *= 0.9 + Math.random() * 0.2;
+
+  const missChance = Math.max(0, Math.min(50, defender.eva - (attacker.acc - atkMods.accPenalty) + 100));
+  const missed = Math.random() * 100 < missChance;
+
+  let crit = false;
+  if (!missed) {
+    const critChance = attacker.crit + atkMods.critAdd;
+    crit = Math.random() * 100 < critChance;
+    if (crit) base *= CONFIG.combat.critMult;
+  }
+
+  let resonanceUsed = false;
+  if (attacker._resonanceBuffActive && !missed) {
+    base *= CONFIG.combat.resonanceMult;
+    attacker._resonanceBuffActive = false;
+    resonanceUsed = true;
+  }
+
+  if (defender.defending) base *= 0.5;
+  if (defMods.dmgReduction > 0) base *= (1 - defMods.dmgReduction);
+
+  // ========== БОНУС ПРОТИВ БОССОВ (сет) ==========
+  if (attacker.isHero && defender.isBoss && attacker.ref && window.Hero) {
+    var astats = Hero.getDerivedStats(attacker.ref);
+    if (astats.bossDmgMult && astats.bossDmgMult > 0) {
+      base *= (1 + astats.bossDmgMult);
+    }
+  }
+
+  return {
+    damage: Math.floor(base),
+    missed: missed,
+    crit: crit,
+    resonanceUsed: resonanceUsed
+  };
+}
+
+function applyDamage(battle, target, amount, sourceType) {
+  if (!target || target.hp <= 0) return { actual: 0, died: false };
+
+  let final = amount;
+
+  if (!target.isEnemy) {
+    let capPct = 0.25;
+    if (sourceType === 'elite') capPct = 0.35;
+    if (sourceType === 'boss') capPct = 0.40;
+    const maxDmg = Math.floor(target.maxHp * capPct);
+    if (final > maxDmg) final = maxDmg;
+  }
+
+  const minDmg = Math.floor(target.maxHp * 0.05);
+  if (final > 0 && final < minDmg) final = minDmg;
+
+  final = Math.max(1, Math.floor(final));
+  target.hp = Math.max(0, target.hp - final);
+  gainResonanceOnDamageTaken(target, final / target.maxHp);
+
+  let died = false;
+  if (target.hp <= 0) {
+    died = true;
+    if (target.isEnemy) logBattle(battle, target.name + ' побеждён.', 'sys');
+  }
+
+  // Визуальный эффект: вспышка + всплывающая цифра
+  if (window.Combat && Combat.showBattleEffect) {
+    var isCrit = (sourceType === 'crit' || sourceType === 'hero_crit' || sourceType === 'boss_crit');
+    Combat.showBattleEffect(target.unitId, isCrit ? 'dmg_crit' : 'dmg', final);
+  }
+
+  return { actual: final, died: died };
+}
+
+function applyHeal(battle, target, amount) {
+  if (!target || target.hp <= 0) return 0;
+  const heal = Math.max(1, Math.floor(amount));
+  const actual = Math.min(heal, target.maxHp - target.hp);
+  target.hp += actual;
+  logBattle(battle, target.name + ': +' + actual + ' HP', 'heal');
+
+  // Визуальный эффект: зелёная цифра лечения
+  if (window.Combat && Combat.showBattleEffect && actual > 0) {
+    Combat.showBattleEffect(target.unitId, 'heal', actual);
+  }
+
+  return actual;
+}
+
+// ============================================================
+// АТАКА
+// ============================================================
+
+// ============================================================
+// ТРОТТЛИНГ SFX (чтобы не было каши из звуков в бою)
+// ============================================================
+var _sfxLastPlay = {};
+function _sfxThrottle(name, minMs) {
+  if (!window.SFX) return false;
+  var now = Date.now();
+  var last = _sfxLastPlay[name] || 0;
+  if (now - last < (minMs || 120)) return false;
+  _sfxLastPlay[name] = now;
+  return true;
+}
+
+function attack(battle, attacker, target) {
+  if (!battle || !attacker || !target) return { ok: false };
+  if (attacker.hp <= 0 || target.hp <= 0) return { ok: false };
+  if (!canAct(attacker)) {
+    logBattle(battle, attacker.name + ': пропуск хода', 'warn');
+    return { ok: false, skipped: true };
+  }
+
+  const res = calcDamage(attacker, target, { power: 1.0, type: 'phys' });
+
+  if (res.missed) {
+    logBattle(battle, attacker.name + ' промахнулся по ' + target.name, 'miss');
+    if (!attacker.isEnemy) gainResonanceOnHit(attacker, false);
+    // ЗВУК ПРОМАХА
+    if (_sfxThrottle('miss', 150)) SFX.play('miss');
+    return { ok: true, missed: true };
+  }
+
+  let srcType = 'mob';
+  if (attacker.isEnemy) {
+    if (attacker.isBoss) srcType = 'boss';
+    else if (attacker.isElite) srcType = 'elite';
+  } else srcType = 'hero';
+
+  const applied = applyDamage(battle, target, res.damage, srcType);
+
+  if (res.resonanceUsed) logBattle(battle, attacker.name + ': РЕЗОНАНС ×2!', 'crit');
+  const critTxt = res.crit ? ' КРИТ!' : '';
+  logBattle(battle, attacker.name + ' → ' + target.name + ': ' + applied.actual + ' урона' + critTxt, res.crit ? 'crit' : 'dmg');
+
+  // === ЗВУКИ УДАРОВ ===
+  if (window.SFX) {
+    if (attacker.isHero) {
+      // Игрок бьёт
+      if (res.crit) {
+        if (_sfxThrottle('hit_skill', 100)) SFX.play('hit_skill', 1.1);
+      } else {
+        if (_sfxThrottle('hit_auto', 100)) SFX.play('hit_auto');
+      }
+    } else if (attacker.isEnemy) {
+      // Мобы бьют БЕЗ звука (по просьбе)
+    }
+  }
+
+  if (!attacker.isEnemy) gainResonanceOnHit(attacker, res.crit);
+  else addResonance(attacker, CONFIG.combat.resonancePerHit * 0.5);
+
+  if (attacker.isHero && window.Inventory) Inventory.damageDurability('weapon', 1);
+
+  // ========== СПЕЦЭФФЕКТЫ СЕТОВ ==========
+  if (attacker.isHero && attacker.ref && window.Hero) {
+    var stats = Hero.getDerivedStats(attacker.ref);
+
+    // Вампиризм: +% HP от урона
+    if (stats.lifesteal && stats.lifesteal > 0 && applied.actual > 0) {
+      var heal = Math.floor(applied.actual * stats.lifesteal);
+      if (heal > 0 && attacker.hp < attacker.maxHp) {
+        var actualHeal = Math.min(heal, attacker.maxHp - attacker.hp);
+        attacker.hp += actualHeal;
+        logBattle(battle, attacker.name + ': +' + actualHeal + ' HP (вампиризм)', 'heal');
+      }
+    }
+
+    // Оглушение при крите
+    if (stats.stunOnCrit && stats.stunOnCrit > 0 && res.crit && applied.actual > 0) {
+      if (Math.random() < stats.stunOnCrit) {
+        applyStatus(target, 'stun', 1, {});
+        logBattle(battle, target.name + ': ОГЛУШЁН (крит сета)', 'warn');
+      }
+    }
+
+    // +% HP при убийстве
+    if (stats.hpOnKill && stats.hpOnKill > 0 && applied.died) {
+      var killHeal = Math.floor(attacker.maxHp * stats.hpOnKill);
+      if (killHeal > 0 && attacker.hp < attacker.maxHp) {
+        var actualKH = Math.min(killHeal, attacker.maxHp - attacker.hp);
+        attacker.hp += actualKH;
+        logBattle(battle, attacker.name + ': +' + actualKH + ' HP (сет — убийство)', 'heal');
+      }
+    }
+  }
+
+  return { ok: true, damage: applied.actual, crit: res.crit, died: applied.died };
+}
+
+// ============================================================
+// СКИЛЛЫ
+// ============================================================
+
+function useSkill(battle, actor, skill, target) {
+  if (!battle || !actor || !skill) return { ok: false, reason: 'Некорректные данные' };
+  if (!canAct(actor)) {
+    logBattle(battle, actor.name + ': пропуск хода', 'warn');
+    return { ok: false, skipped: true };
+  }
+  if (actor.isHero && isSilenced(actor)) return { ok: false, reason: 'Немота' };
+
+  const cost = skill.cost || {};
+  if (cost.mp && actor.mp < cost.mp) return { ok: false, reason: 'Не хватает MP' };
+  if (cost.sp && actor.sp < cost.sp) return { ok: false, reason: 'Не хватает SP' };
+  if (cost.res && actor.resonance < cost.res) return { ok: false, reason: 'Не хватает Резонанса' };
+
+  if (cost.mp) actor.mp -= cost.mp;
+  if (cost.sp) actor.sp -= cost.sp;
+  if (cost.res && !actor.isEnemy) actor.resonance -= cost.res;
+
+  logBattle(battle, actor.name + ' применяет ' + skill.name, 'sys');
+
+  const result = { ok: true, skillId: skill.id };
+  const hits = skill.hits || 1;
+
+  // Приводим target к unit-объекту (может прийти как строка unitId)
+  var targetUnit = null;
+  if (target) {
+    if (typeof target === 'string') {
+      targetUnit = findUnit(battle, target);
+    } else if (typeof target === 'object' && target.unitId) {
+      targetUnit = target;
+    }
+  }
+
+  let targets = [];
+  switch (skill.target) {
+    case 'enemy':     targets = targetUnit ? [targetUnit] : []; break;
+    case 'all_enemy': targets = getLivingEnemies(battle); break;
+    case 'self':      targets = [actor]; break;
+    case 'ally':      targets = targetUnit ? [targetUnit] : []; break;
+    case 'all_ally':  targets = getLivingAllies(battle); break;
+    default:          targets = targetUnit ? [targetUnit] : [];
+  }
+
+  if (skill.type === 'phys' || skill.type === 'mag') {
+    for (let h = 0; h < hits; h++) {
+      for (const t of targets) {
+        if (t.hp <= 0) continue;
+        const dmgRes = calcDamage(actor, t, { power: skill.power || 1.0, type: skill.type });
+        if (dmgRes.missed) {
+          logBattle(battle, actor.name + ' промахнулся по ' + t.name, 'miss');
+          continue;
+        }
+        let srcType = 'mob';
+        if (actor.isEnemy) {
+          if (actor.isBoss) srcType = 'boss';
+          else if (actor.isElite) srcType = 'elite';
+        } else srcType = 'hero';
+
+        const applied = applyDamage(battle, t, dmgRes.damage, srcType);
+        if (dmgRes.resonanceUsed) logBattle(battle, actor.name + ': РЕЗОНАНС ×2!', 'crit');
+        const critTxt = dmgRes.crit ? ' КРИТ!' : '';
+        logBattle(battle, actor.name + ' → ' + t.name + ': ' + applied.actual + ' урона' + critTxt, dmgRes.crit ? 'crit' : 'dmg');
+      }
+    }
+  }
+
+  if (skill.type === 'heal') {
+    const healAmt = Math.floor(actor.mag * (skill.power || 1.0) + actor.mag * 0.5);
+    for (const t of targets) {
+      if (t.hp <= 0) continue;
+      applyHeal(battle, t, healAmt);
+    }
+    if (window.SFX) SFX.play('heal');
+  }
+
+  if (skill.status) {
+    for (const t of targets) {
+      if (t.hp <= 0) continue;
+      const chance = skill.status.chance !== undefined ? skill.status.chance : 1.0;
+      if (Math.random() < chance) {
+        const fields = extractStatusFields(skill.status);
+        const applied = applyStatus(t, skill.status.id, skill.status.dur || 1, {
+          value: skill.status.value,
+          fields: fields
+        });
+        if (applied) logBattle(battle, t.name + ': ' + skill.status.id, 'sys');
+      }
+    }
+  }
+
+  handleSpecialSkill(battle, actor, skill, targets);
+
+  if (!actor.isEnemy) gainResonanceOnSkill(actor);
+  else addResonance(actor, CONFIG.combat.resonancePerSkill * 0.5);
+
+  checkBattleEnd(battle);
+  return result;
+}
+
+function handleSpecialSkill(battle, actor, skill, targets) {
+  const sp = skill.special;
+  if (!sp) return;
+
+  // Расширенные эффекты финальных боссов
+  if (sp === 'cleanse') {
+    for (const t of targets) cleanseDebuffs(t);
+    return;
+  }
+
+  // Пожирание: восстановление HP от урона
+  if (sp === 'drain_30' || sp === 'drain_50') {
+    const pct = sp === 'drain_30' ? 0.30 : 0.50;
+    const heal = Math.floor(actor.maxHp * pct * 0.1);
+    actor.hp = Math.min(actor.maxHp, actor.hp + heal);
+    logBattle(battle, actor.name + ': +' + heal + ' HP (поглощение)', 'heal');
+    return;
+  }
+
+  // Баффы ярости
+  if (sp === 'rage_50_30' || sp === 'rage_100_50') {
+    const atkBonus = sp === 'rage_50_30' ? 0.50 : 1.00;
+    const spdBonus = sp === 'rage_50_30' ? 0.30 : 0.50;
+    actor.atk = Math.floor(actor.atk * (1 + atkBonus));
+    actor.spd = Math.floor(actor.spd * (1 + spdBonus));
+    logBattle(battle, actor.name + ': ЯРОСТЬ! +' + Math.floor(atkBonus*100) + '% ATK', 'crit');
+    return;
+  }
+
+  // Призыв душ
+  if (sp === 'summon_turn' || sp === 'summon_three_souls') {
+    const count = sp === 'summon_turn' ? 1 : 3;
+    logBattle(battle, actor.name + ': призвал ' + count + ' душ Предтеч', 'sys');
+    // Упрощённый эффект: множитель урона
+    for (const t of targets) {
+      const dmg = Math.floor(actor.atk * count * 0.8);
+      applyDamage(battle, t, dmg, 'boss');
+    }
+    return;
+  }
+
+  // Стена Бездны: тюрьма
+  if (sp === 'trap') {
+    for (const t of targets) {
+      applyStatus(t, 'stun', 2, {});
+      logBattle(battle, t.name + ': заперт в Стене Бездны', 'warn');
+    }
+    return;
+  }
+
+  // Сцены из прошлого: ослабление
+  if (sp === 'time_scenes') {
+    for (const t of targets) {
+      applyStatus(t, 'weakened', 3, {});
+      logBattle(battle, t.name + ': видит прошлое. Ослаблен.', 'warn');
+    }
+    return;
+  }
+
+  // Крик меча
+  if (sp === 'four_skulls_scream') {
+    for (const t of targets) {
+      applyStatus(t, 'stun', 1, {});
+      logBattle(battle, t.name + ': ОГЛУШЁН криком меча', 'crit');
+    }
+    return;
+  }
+
+  // Проклятие короны
+  if (sp === 'crown') {
+    for (const t of targets) {
+      applyStatus(t, 'vulnerable', 2, {});
+      logBattle(battle, t.name + ': проклят короной. +100% урона.', 'warn');
+    }
+    return;
+  }
+}
+
+// ============================================================
+// РЕЗОНАНС — РУЧНАЯ АКТИВАЦИЯ
+// ============================================================
+
+function heroActivateResonance(battle, actor) {
+  if (!actor || !actor.resonanceReady) return { ok: false, reason: 'Резонанс не готов' };
+  const ok = activateResonance(actor);
+  if (ok) logBattle(battle, actor.name + ': СВЯЗЬ ЗАРИ активирована (×2 урона)', 'crit');
+  return { ok };
+}
+
+// ============================================================
+// ЭКСПОРТ
+// ============================================================
+
+Object.assign(window.Combat, {
+  hasStatus, isStunned, isSilenced, canAct,
+  applyStatus, removeStatus, cleanseDebuffs, processStatuses,
+  getStatusModifiers, extractStatusFields,
+  getResonanceBonuses,
+  applyRawDamage, calcDamage, applyDamage, applyHeal,
+  attack, useSkill, handleSpecialSkill,
+  showBattleEffect,
+  heroActivateResonance
+});
+
+var Combat = window.Combat;
+
+// ============================================================
+// ЧАСТЬ 3 — ИИ, ХОД ГЕРОЯ, ПОБЕДА, НАГРАДЫ (ИСПРАВЛЕННАЯ)
+// ============================================================
+
+// ============================================================
+// НАЧАЛО ХОДА ЮНИТА
+// ============================================================
+
+function beginTurn(battle, unit) {
+  if (!battle || !unit) return { ok: false, skipped: false };
+
+  // 1. Тики статусов
+  if (unit.statuses && unit.statuses.length > 0) {
+    processStatuses(battle, unit);
+  }
+
+  // 2. Смерть от тиков
+  if (unit.hp <= 0) {
+    logBattle(battle, unit.name + ' погиб от эффекта', 'warn');
+    return { ok: false, skipped: true, died: true };
+  }
+
+  // 3. Оглушение / заморозка
+  if (!canAct(unit)) {
+    logBattle(battle, unit.name + ': ход пропущен', 'warn');
+    return { ok: false, skipped: true };
+  }
+
+  return { ok: true, skipped: false };
+}
+
+// ============================================================
+// ХОД ГЕРОЯ — ОБЁРТКИ ДЛЯ UI
+// ============================================================
+
+// Внутренняя функция: единая точка для всех действий героя
+function _heroAction(battle, actionFn) {
+  if (!battle || battle.status !== 'active') return { ok: false };
+
+  const hero = getHeroUnit(battle);
+  if (!hero || hero.hp <= 0) return { ok: false };
+
+  // Начало хода — тики статусов
+  const begin = beginTurn(battle, hero);
+  if (begin.skipped) {
+    finishHeroTurn(battle, hero);
+    return { ok: false, skipped: true };
+  }
+
+  // Действие
+  const result = actionFn(hero);
+
+  // Если статус боя изменился (побег/победа) — финализируем
+  if (battle.status !== 'active') {
+    finishBattle(battle);
+    return result || { ok: true };
+  }
+
+  finishHeroTurn(battle, hero);
+  return result || { ok: true };
+}
+
+function heroAttack(battle, targetUnitId) {
+  return _heroAction(battle, function(hero) {
+    const target = findUnit(battle, targetUnitId);
+    if (!target || target.hp <= 0) return { ok: false, reason: 'Цель не найдена' };
+    return attack(battle, hero, target);
+  });
+}
+
+function heroSkill(battle, skillId, targetUnitId) {
+  return _heroAction(battle, function(hero) {
+    const skill = SKILLS[skillId];
+    if (!skill) return { ok: false, reason: 'Скилл не найден' };
+
+    // Кулдаун
+    const cd = (hero.ref.skillCooldowns && hero.ref.skillCooldowns[skillId]) || 0;
+    if (cd > 0) return { ok: false, reason: 'Кулдаун: ' + cd };
+
+    const target = targetUnitId ? findUnit(battle, targetUnitId) : null;
+    const r = useSkill(battle, hero, skill, target);
+
+    if (r.ok && skill.cd > 0) {
+      if (!hero.ref.skillCooldowns) hero.ref.skillCooldowns = {};
+      hero.ref.skillCooldowns[skillId] = skill.cd + 1;
+    }
+    return r;
+  });
+}
+
+function heroItem(battle, itemId) {
+  return _heroAction(battle, function(hero) {
+    const item = ITEMS[itemId];
+    if (!item || item.type !== 'consumable') return { ok: false, reason: 'Не расходник' };
+    if (!window.Inventory || !Inventory.hasItem(itemId, 1)) return { ok: false, reason: 'Нет в сумке' };
+
+    const eff = item.effect || {};
+
+    if (eff.hpPct) {
+      const heal = Math.floor(hero.maxHp * eff.hpPct);
+      const actual = Math.min(heal, hero.maxHp - hero.hp);
+      hero.hp += actual;
+      logBattle(battle, hero.name + ': +' + actual + ' HP', 'heal');
+    }
+    if (eff.mpPct) {
+      const heal = Math.floor(hero.maxMp * eff.mpPct);
+      const actual = Math.min(heal, hero.maxMp - hero.mp);
+      hero.mp += actual;
+      logBattle(battle, hero.name + ': +' + actual + ' MP', 'heal');
+    }
+    if (eff.spFlat) {
+      const actual = Math.min(eff.spFlat, hero.maxSp - hero.sp);
+      hero.sp += actual;
+      logBattle(battle, hero.name + ': +' + actual + ' SP', 'heal');
+    }
+    if (eff.buffAtk) applyStatus(hero, 'atk_up', 1, { fields: { atkBuff: eff.buffAtk } });
+    if (eff.buffDef) applyStatus(hero, 'def_up', 1, { fields: { defBuff: eff.buffDef } });
+
+    if (eff.teleport) {
+      battle.status = 'fled';
+      logBattle(battle, 'Свиток возврата — побег', 'sys');
+      return { ok: true, fled: true };
+    }
+
+    if (eff.aoeDmg) {
+      for (const e of getLivingEnemies(battle)) {
+        applyDamage(battle, e, eff.aoeDmg, 'hero');
+        logBattle(battle, e.name + ': ' + eff.aoeDmg + ' от бомбы', 'dmg');
+      }
+    }
+
+    Inventory.removeFromInventory(itemId, 1);
+    return { ok: true };
+  });
+}
+
+function heroDefend(battle) {
+  return _heroAction(battle, function(hero) {
+    hero.defending = true;
+    logBattle(battle, hero.name + ': защита (+100%)', 'sys');
+    return { ok: true };
+  });
+}
+
+function heroFlee(battle) {
+  return _heroAction(battle, function(hero) {
+    if (battle.isBoss) {
+      logBattle(battle, 'Босс не даёт сбежать!', 'warn');
+      return { ok: true, failed: true };
+    }
+
+    const enemies = getLivingEnemies(battle);
+    if (enemies.length === 0) return { ok: false };
+
+    const avgSpd = enemies.reduce((s, e) => s + e.spd, 0) / enemies.length;
+    let chance = (hero.spd / avgSpd) * 50;
+    chance = Math.max(10, Math.min(80, chance));
+
+    if (Math.random() * 100 < chance) {
+      battle.status = 'fled';
+      logBattle(battle, 'Побег удался!', 'sys');
+      return { ok: true, fled: true };
+    }
+
+    logBattle(battle, 'Побег не удался', 'warn');
+    return { ok: true, failed: true };
+  });
+}
+
+// Резонанс — не завершает ход
+function heroResonance(battle) {
+  if (!battle) return { ok: false };
+  const hero = getHeroUnit(battle);
+  if (!hero) return { ok: false };
+  return heroActivateResonance(battle, hero);
+}
+
+// ============================================================
+// ЗАВЕРШЕНИЕ ХОДА ГЕРОЯ
+// ============================================================
+
+function finishHeroTurn(battle, heroUnit) {
+  if (heroUnit.ref) {
+    heroUnit.ref.hp = heroUnit.hp;
+    heroUnit.ref.mp = heroUnit.mp;
+    heroUnit.ref.sp = heroUnit.sp;
+    heroUnit.ref.resonance = heroUnit.resonance;
+  }
+
+  endTurn(battle, heroUnit.unitId);
+
+  // Если после endTurn бой закончился — финализируем
+  if (battle.status !== 'active') {
+    finishBattle(battle);
+  }
+}
+
+// ============================================================
+// ИИ МОБОВ
+// ============================================================
+
+function enemyTurn(battle, enemyUnit) {
+  if (!battle || !enemyUnit || enemyUnit.hp <= 0) return { ok: false };
+
+  // Начало хода
+  const begin = beginTurn(battle, enemyUnit);
+  if (begin.skipped) {
+    endTurn(battle, enemyUnit.unitId);
+    if (battle.status !== 'active') finishBattle(battle);
+    return { ok: false, skipped: true };
+  }
+
+  const allies = getLivingAllies(battle);
+  if (allies.length === 0) {
+    endTurn(battle, enemyUnit.unitId);
+    if (battle.status !== 'active') finishBattle(battle);
+    return { ok: false };
+  }
+
+  if (enemyUnit.isBoss) updateBossPhase(battle, enemyUnit);
+
+  const profile = enemyUnit.aiProfile || 'trash';
+  let action;
+  if (profile === 'boss')        action = chooseBossAction(battle, enemyUnit, allies);
+  else if (profile === 'pvp')    action = choosePvPAction(battle, enemyUnit, allies);
+  else if (profile === 'elite')  action = chooseEliteAction(battle, enemyUnit, allies);
+  else if (profile === 'coward') action = chooseCowardAction(battle, enemyUnit, allies);
+  else                           action = chooseTrashAction(battle, enemyUnit, allies);
+
+  executeEnemyAction(battle, enemyUnit, action);
+
+  if (checkBattleEnd(battle)) {
+    finishBattle(battle);
+    return { ok: true, action: action };
+  }
+
+  endTurn(battle, enemyUnit.unitId);
+
+  if (battle.status !== 'active') finishBattle(battle);
+  return { ok: true, action: action };
+}
+
+// ============================================================
+// ВЫБОР ДЕЙСТВИЯ
+// ============================================================
+
+function chooseRandomTarget(targets) {
+  const hero = targets.find(t => t.isHero);
+  if (hero && Math.random() < 0.7) return hero;
+  return targets[Math.floor(Math.random() * targets.length)];
+}
+
+function choosePvPAction(battle, unit, allies) {
+  // Умный AI ПК:
+  // 1. Если HP < 15% и не Легенда → попытка бегства
+  // 2. Если HP < 40% и есть хил-скилл → использовать
+  // 3. В начале боя (резонанс < 30) → бафф-скилл
+  // 4. Иначе: 60% атака / 40% скилл
+
+  const hpPct = unit.hp / unit.maxHp;
+
+  // Легенды не убегают
+  const rankId = unit.rankId || (unit.pvpMeta && unit.pvpMeta.rankId) || 'bronze';
+  const canFlee = rankId !== 'legend';
+
+  // 1. Побег
+  if (hpPct < 0.15 && canFlee && Math.random() < 0.50) {
+    return { type: 'flee' };
+  }
+
+  // 2. Хил-скилл (если есть и HP < 40%)
+  if (hpPct < 0.40) {
+    const healSkills = unit.skillIds.filter(sid => {
+      const sk = SKILLS[sid];
+      return sk && sk.type === 'heal';
+    });
+    if (healSkills.length > 0 && Math.random() < 0.70) {
+      const skill = SKILLS[healSkills[0]];
+      if (skill && unit.mp >= (skill.cost && skill.cost.mp || 0)) {
+        return { type: 'skill', skill: skill, target: unit };
+      }
+    }
+  }
+
+  // 3. Бафф-скилл в начале боя
+  if (unit.resonance < 30) {
+    const buffSkills = unit.skillIds.filter(sid => {
+      const sk = SKILLS[sid];
+      return sk && (sk.type === 'buff') && sk.target === 'self';
+    });
+    if (buffSkills.length > 0 && Math.random() < 0.40) {
+      const skill = SKILLS[buffSkills[0]];
+      if (skill && unit.mp >= (skill.cost && skill.cost.mp || 0)) {
+        return { type: 'skill', skill: skill, target: unit };
+      }
+    }
+  }
+
+  // 4. Обычные действия
+  const target = chooseRandomTarget(allies);
+  const r = Math.random();
+
+  if (r < 0.60 || unit.skillIds.length === 0) {
+    return { type: 'attack', target: target };
+  }
+
+  // Ищем скилл, на который хватает MP
+  const availableSkills = unit.skillIds
+    .map(sid => SKILLS[sid])
+    .filter(sk => sk && unit.mp >= (sk.cost && sk.cost.mp || 0));
+
+  if (availableSkills.length > 0) {
+    const skill = availableSkills[Math.floor(Math.random() * availableSkills.length)];
+    return { type: 'skill', skill: skill, target: target };
+  }
+
+  return { type: 'attack', target: target };
+}
+
+function chooseTrashAction(battle, unit, allies) {
+  const r = Math.random();
+  const target = chooseRandomTarget(allies);
+
+  if (r < 0.60 || unit.skillIds.length === 0) return { type: 'attack', target: target };
+  if (r < 0.90) {
+    const skill = SKILLS_MOB[unit.skillIds[Math.floor(Math.random() * unit.skillIds.length)]];
+    if (skill) return { type: 'skill', skill: skill, target: target };
+  }
+  return { type: 'defend', target: unit };
+}
+
+function chooseEliteAction(battle, unit, allies) {
+  const r = Math.random();
+  const target = chooseRandomTarget(allies);
+
+  if (r < 0.40) return { type: 'attack', target: target };
+  if (r < 0.90 && unit.skillIds.length > 0) {
+    const skill = SKILLS_MOB[unit.skillIds[Math.floor(Math.random() * unit.skillIds.length)]];
+    if (skill) return { type: 'skill', skill: skill, target: target };
+  }
+  return { type: 'defend', target: unit };
+}
+
+function chooseCowardAction(battle, unit, allies) {
+  const hpPct = unit.hp / unit.maxHp;
+  if (hpPct < 0.25 && Math.random() < 0.60) return { type: 'flee' };
+
+  const r = Math.random();
+  const target = chooseRandomTarget(allies);
+  if (r < 0.70) return { type: 'attack', target: target };
+  if (r < 0.95 && unit.skillIds.length > 0) {
+    const skill = SKILLS_MOB[unit.skillIds[Math.floor(Math.random() * unit.skillIds.length)]];
+    if (skill) return { type: 'skill', skill: skill, target: target };
+  }
+  return { type: 'defend', target: unit };
+}
+
+function chooseBossAction(battle, unit, allies) {
+  const phase = unit.currentPhase || 0;
+  const target = chooseRandomTarget(allies);
+  const skill0 = unit.skillIds[0] ? SKILLS_MOB[unit.skillIds[0]] : null;
+  const skill1 = unit.skillIds[1] ? SKILLS_MOB[unit.skillIds[1]] : null;
+
+  if (phase === 0) {
+    if (Math.random() < 0.5 && skill0) return { type: 'skill', skill: skill0, target: target };
+    return { type: 'attack', target: target };
+  }
+  if (phase === 1) {
+    if (Math.random() < 0.7 && skill0) return { type: 'skill', skill: skill0, target: target };
+    return { type: 'attack', target: target };
+  }
+  if (phase === 2) {
+    if (!unit._summonedInPhase2 && unit.summons && unit.summons.length > 0) {
+      return { type: 'summon', summons: unit.summons };
+    }
+    if (Math.random() < 0.6 && skill1) return { type: 'skill', skill: skill1, target: target };
+    if (skill0) return { type: 'skill', skill: skill0, target: target };
+    return { type: 'attack', target: target };
+  }
+  return { type: 'attack', target: target };
+}
+
+// ============================================================
+// ФАЗЫ БОССА
+// ============================================================
+
+function updateBossPhase(battle, boss) {
+  if (!boss || !boss.isBoss) return;
+  const hpPct = boss.hp / boss.maxHp;
+  let newPhase = 0;
+  if (hpPct < 0.30) newPhase = 2;
+  else if (hpPct < 0.70) newPhase = 1;
+
+  if (newPhase !== boss.currentPhase) {
+    boss.currentPhase = newPhase;
+    const names = ['дебаффы', 'тяжёлые атаки', 'ярость и призыв'];
+    logBattle(battle, boss.name + ': фаза ' + (newPhase + 1) + ' — ' + names[newPhase], 'warn');
+  }
+}
+
+// ============================================================
+// ВЫПОЛНЕНИЕ ДЕЙСТВИЯ МОБА
+// ============================================================
+
+function executeEnemyAction(battle, unit, action) {
+  if (!action) return;
+
+  switch (action.type) {
+    case 'attack':
+      attack(battle, unit, action.target);
+      break;
+    case 'skill':
+      useSkill(battle, unit, action.skill, action.target);
+      break;
+    case 'defend':
+      unit.defending = true;
+      logBattle(battle, unit.name + ': защита', 'sys');
+      break;
+    case 'flee':
+      // Моб сбегает сам — убираем из боя, но бой продолжается
+      unit.hp = 0;
+      unit.escaped = true;
+      logBattle(battle, unit.name + ' сбежал!', 'warn');
+      break;
+    case 'summon':
+      summonMinions(battle, unit, action.summons);
+      unit._summonedInPhase2 = true;
+      break;
+  }
+}
+
+// ============================================================
+// ПРИЗЫВ МИНЬОНОВ
+// ============================================================
+
+function summonMinions(battle, boss, minionIds) {
+  if (!minionIds || minionIds.length === 0) return;
+  logBattle(battle, boss.name + ' призывает союзников!', 'warn');
+  for (const mobId of minionIds) {
+    const mob = MOBS[mobId];
+    if (!mob) continue;
+    const u = createEnemyUnit(mob, { hp: mob.hp, maxHp: mob.hp });
+    u.resonance = 10;
+    battle.enemyUnits.push(u);
+    logBattle(battle, 'Появился: ' + u.name, 'sys');
+  }
+}
+
+// ============================================================
+// НАГРАДЫ
+// ============================================================
+
+function calcRewards(battle) {
+  if (!battle) return null;
+  let totalExp = 0, totalGold = 0;
+  const drops = [];
+
+  // Бонусы сета (goldMult, expMult, bossRewardMult)
+  var goldMult = 1.0, expMult = 1.0, bossRewardMult = 1.0;
+  if (window.Hero && window.STATE && STATE.hero) {
+    var hStats = Hero.getDerivedStats(STATE.hero);
+    if (hStats.goldMult)       goldMult       += hStats.goldMult;
+    if (hStats.expMult)        expMult        += hStats.expMult;
+    if (hStats.bossRewardMult) bossRewardMult += hStats.bossRewardMult;
+  }
+
+  for (const e of battle.enemyUnits) {
+    if (e.hp <= 0 && !e.escaped) {
+      var enemyExp = e.exp || 0;
+      var enemyGold = e.gold || 0;
+      if (e.isBoss) {
+        enemyExp = Math.floor(enemyExp * bossRewardMult);
+        enemyGold = Math.floor(enemyGold * bossRewardMult);
+      }
+      totalExp += Math.floor(enemyExp * expMult);
+      totalGold += Math.floor(enemyGold * goldMult);
+      if (e.loot) {
+        for (const entry of e.loot) {
+          if (Math.random() < entry.chance) {
+            drops.push({ itemId: entry.itemId, quantity: entry.quantity || 1, from: e.name });
+          }
+        }
+      }
+      // === ДРОП КАМНЕЙ ===
+      var gemId = rollGemDrop(e);
+      if (gemId) {
+        drops.push({ itemId: gemId, quantity: 1, from: e.name });
+      }
+      // === УНИКАЛЬНЫЕ ПРЕДМЕТЫ С БОССОВ ===
+      if (e.isBoss && e.mobId && window.UniqueItems && UniqueItems.BOSS_UNIQUE_DROPS) {
+        var pool = UniqueItems.BOSS_UNIQUE_DROPS[e.mobId] || [];
+        for (var ui = 0; ui < pool.length; ui++) {
+          if (Math.random() < 0.03) {  // 3% на каждый предмет
+            drops.push({ itemId: pool[ui], quantity: 1, from: e.name });
+          }
+        }
+      }
+    }
+  }
+  return { exp: totalExp, gold: totalGold, drops: drops };
+}
+
+// Дроп камней с мобов (очень низкий шанс)
+function rollGemDrop(enemyUnit) {
+  if (!enemyUnit || !enemyUnit.isEnemy) return null;
+  if (typeof GEMS === 'undefined') return null;
+
+  // Шанс по типу моба
+  var chance = 0.005; // 0.5% обычные
+  if (enemyUnit.isBoss)        chance = 0.07;  // 7% босс
+  else if (enemyUnit.isElite)  chance = 0.03;  // 3% элита
+
+  // Бонус сета Draconic
+  if (window.Hero && window.STATE && STATE.hero) {
+    var heroStats = Hero.getDerivedStats(STATE.hero);
+    if (heroStats.gemDropBonus && heroStats.gemDropBonus > 0) {
+      chance += heroStats.gemDropBonus;
+    }
+  }
+
+  if (Math.random() >= chance) return null;
+
+  // Выбор тира: чем сильнее моб — тем выше
+  var tier = 1;
+  var roll = Math.random();
+
+  if (enemyUnit.isBoss) {
+    // босс: tier3 40%, tier2 60%
+    if (roll < 0.40) tier = 3;
+    else tier = 2;
+  } else if (enemyUnit.isElite) {
+    // элита: tier1 70%, tier2 30%
+    if (roll < 0.30) tier = 2;
+    else tier = 1;
+  } else {
+    // обычный: только tier1
+    tier = 1;
+  }
+
+  // Собираем все камни этого тира
+  var pool = [];
+  for (var id in GEMS) {
+    if (GEMS[id] && GEMS[id].tier === tier) {
+      pool.push(id);
+    }
+  }
+  if (pool.length === 0) return null;
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+
+function applyRewards(battle) {
+  if (!battle || !battle.rewards) return;
+  const hero = getHeroUnit(battle);
+  if (!hero || !hero.ref) return;
+  const r = battle.rewards;
+
+  if (r.exp > 0) {
+    const result = Hero.gainExp(hero.ref, r.exp);
+    logBattle(battle, 'Опыт: +' + r.exp + (result.levelsGained > 0 ? ' (УРОВЕНЬ +' + result.levelsGained + '!)' : ''), 'loot');
+  }
+  if (r.gold > 0) {
+    hero.ref.gold += r.gold;
+    logBattle(battle, 'Золото: +' + r.gold, 'loot');
+  }
+  for (const d of r.drops) {
+    const res = Inventory.addToInventory(d.itemId, d.quantity);
+    // === ТРИГГЕР КВЕСТОВ: собран предмет ===
+    if (res.added > 0 && window.Quest && Quest.onItemCollected) {
+      Quest.onItemCollected(d.itemId);
+    }
+    const item = ITEMS[d.itemId];
+    if (res.added > 0 && item) logBattle(battle, 'Получено: ' + item.name + ' x' + res.added, 'loot');
+    if (res.dropped > 0) logBattle(battle, 'Сумка полна', 'warn');
+  }
+  if (window.STATE && window.STATE.stats) {
+    for (const e of battle.enemyUnits) {
+      if (e.hp <= 0 && !e.escaped) {
+        window.STATE.stats.mobsKilled++;
+        if (e.isBoss) window.STATE.stats.bossesKilled++;
+
+        // === ТРИГГЕР КВЕСТОВ: убийство моба ===
+        if (window.Quest && Quest.onMobKilled && e.mobId) {
+          Quest.onMobKilled(e.mobId);
+        }
+
+        // === РАЗБЛОКИРОВКА ЗОН (если босс) ===
+        if (e.isBoss && e.mobId && window.STATE.world) {
+          if (!window.STATE.world.killedBosses) {
+            window.STATE.world.killedBosses = [];
+          }
+          if (!window.STATE.world.killedBosses.includes(e.mobId)) {
+            window.STATE.world.killedBosses.push(e.mobId);
+            logBattle(battle, 'Босс повержен: ' + e.name, 'loot');
+
+            // Автоматическая разблокировка зон
+            if (window.Zone && Zone.autoUnlockZones) {
+              var unlocked = Zone.autoUnlockZones();
+              if (unlocked && unlocked.length > 0) {
+                unlocked.forEach(function(zoneId) {
+                  var z = (window.ZONES && ZONES[zoneId]) ? ZONES[zoneId] : null;
+                  if (z) logBattle(battle, 'Открыта зона: ' + z.name, 'crit');
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+    window.STATE.stats.goldEarned += r.gold;
+  }
+  hero.ref.hp = hero.hp;
+  hero.ref.mp = hero.mp;
+  hero.ref.sp = hero.sp;
+}
+
+// ============================================================
+// ПОРАЖЕНИЕ
+// ============================================================
+
+function applyDefeat(battle) {
+  if (!battle) return;
+  const hero = getHeroUnit(battle);
+  if (!hero || !hero.ref) return;
+  hero.ref.hp = 0;
+  const result = Hero.dieHero(hero.ref);
+  logBattle(battle, 'Потеряно опыта: ' + result.expLoss, 'warn');
+  logBattle(battle, 'Потеряно золота: ' + result.goldLoss, 'warn');
+  Hero.respawnHero(hero.ref);
+  logBattle(battle, hero.name + ' возрождён', 'sys');
+}
+
+// ============================================================
+// ЗАВЕРШЕНИЕ БОЯ
+// ============================================================
+
+function finishBattle(battle) {
+  if (!battle) return;
+  if (battle._finished) return;
+  battle._finished = true;
+
+  if (battle.status === 'victory') {
+    if (!battle.rewards) battle.rewards = calcRewards(battle);
+    applyRewards(battle);
+
+    // PvP-победы — обработать
+    if (window.PvP && battle.enemyUnits) {
+      for (const e of battle.enemyUnits) {
+        if (e.isPvP && e.hp <= 0) {
+          const result = PvP.onPvPKill(e);
+          if (result && result.points > 0) {
+            logBattle(battle, 'PvP: +' + result.points + ' очков (' + result.totalPoints + ' всего)', 'loot');
+            if (result.rankUp) {
+              logBattle(battle, 'НОВЫЙ PVP-РАНГ: ' + result.rankName + '!', 'crit');
+            }
+          }
+        }
+      }
+    }
+
+    // Тайные трофеи — отметить убитого редкого моба
+    if (window.Secrets && battle.enemyUnits) {
+      const hero = getHeroUnit(battle);
+      const heroRef = hero && hero.ref ? hero.ref : (window.STATE && STATE.hero);
+      if (heroRef && Secrets.markMobConsumed) {
+        let markedAny = false;
+        for (const e of battle.enemyUnits) {
+          if (e.isSecret && e.hp <= 0 && e.mobId) {
+            Secrets.markMobConsumed(heroRef, e.mobId);
+            logBattle(battle, 'Трофей записан: ' + e.name + ' больше не вернётся.', 'crit');
+            markedAny = true;
+          }
+        }
+      }
+    }
+  } else if (battle.status === 'defeat') {
+    // Проверить, был ли это PvP-бой
+    let wasPvP = false;
+    if (battle.enemyUnits) {
+      for (const e of battle.enemyUnits) {
+        if (e.isPvP) wasPvP = true;
+      }
+    }
+    if (wasPvP && window.PvP) {
+      const result = PvP.onPvPDeath();
+      if (result && result.lost > 0) {
+        logBattle(battle, 'PvP: потеряно ' + result.lost + ' очков', 'warn');
+      }
+    }
+    applyDefeat(battle);
+  } else if (battle.status === 'fled' || battle.status === 'draw') {
+    const hero = getHeroUnit(battle);
+    if (hero && hero.ref) {
+      hero.ref.hp = hero.hp;
+      hero.ref.mp = hero.mp;
+    }
+    logBattle(battle, battle.status === 'fled' ? 'Вы покинули бой.' : 'Ничья.', 'sys');
+  }
+
+  if (window.Save) Save.saveState();
+}
+
+// ============================================================
+// ЭКСПОРТ
+// ============================================================
+
+Object.assign(window.Combat, {
+  beginTurn,
+  heroAttack, heroSkill, heroItem, heroDefend, heroFlee, heroResonance,
+  finishHeroTurn,
+  enemyTurn,
+  chooseTrashAction, chooseEliteAction, chooseCowardAction, chooseBossAction, choosePvPAction,
+  updateBossPhase,
+  executeEnemyAction,
+  summonMinions,
+  calcRewards, applyRewards, applyDefeat,
+  finishBattle
+});
+
+var Combat = window.Combat;

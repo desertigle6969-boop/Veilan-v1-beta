@@ -1,0 +1,98 @@
+// ============================================================
+// ВЕЙЛАН — ВСПЛЫВАЮЩИЕ УВЕДОМЛЕНИЯ (toast)
+// ============================================================
+
+const TOAST_MAX = 5;
+const TOAST_DURATION = 3000;
+
+let _toastContainer = null;
+
+function _getContainer() {
+  if (_toastContainer && document.body.contains(_toastContainer)) {
+    return _toastContainer;
+  }
+  let el = document.getElementById('toasts');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'toasts';
+    document.body.appendChild(el);
+  }
+  _toastContainer = el;
+  return el;
+}
+
+function _trim() {
+  const c = _getContainer();
+  while (c.children.length > TOAST_MAX) {
+    c.removeChild(c.firstChild);
+  }
+}
+
+// Показать toast
+// type: 'info' | 'good' | 'bad' | 'levelup' | 'loot'
+function showToast(text, type) {
+  const container = _getContainer();
+  const t = type || 'info';
+
+  const el = document.createElement('div');
+  el.className = 'toast toast-' + t;
+  el.textContent = text;
+
+  // Цвета по типу
+  const colors = {
+    info:    { border: '#8a6a2a', text: '#e8b84a' },
+    good:    { border: '#5a9a2a', text: '#8ad04a' },
+    bad:     { border: '#c03030', text: '#e05555' },
+    levelup: { border: '#ffd700', text: '#fff000' },
+    loot:    { border: '#a060c0', text: '#d08aff' }
+  };
+  const c = colors[t] || colors.info;
+  el.style.cssText =
+    'background: linear-gradient(180deg, #3a2a18 0%, #1a1208 100%);' +
+    'border: 2px solid ' + c.border + ';' +
+    'color: ' + c.text + ';' +
+    'padding: 8px 14px;' +
+    'border-radius: 4px;' +
+    'font-size: 13px;' +
+    'text-align: center;' +
+    'font-weight: bold;' +
+    'letter-spacing: 0.5px;' +
+    'box-shadow: 0 0 12px rgba(0,0,0,0.6);' +
+    'animation: toastIn 0.25s;' +
+    'pointer-events: none;' +
+    'opacity: 1;' +
+    'transition: opacity 0.3s;';
+
+  container.appendChild(el);
+  _trim();
+
+  // Убираем через 3 сек
+  setTimeout(function() {
+    el.style.opacity = '0';
+    setTimeout(function() {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    }, 350);
+  }, TOAST_DURATION);
+}
+
+// Обёртки
+function toastInfo(text)    { showToast(text, 'info'); }
+function toastGood(text)    { showToast(text, 'good'); }
+function toastBad(text)     { showToast(text, 'bad'); }
+function toastLevelUp(text) { showToast(text, 'levelup'); }
+function toastLoot(text)    { showToast(text, 'loot'); }
+
+// Специальный toast «Уровень N!»
+function toastLevel(level) {
+  showToast('УРОВЕНЬ ' + level + '!', 'levelup');
+}
+
+window.Toast = {
+  show: showToast,
+  info: toastInfo,
+  good: toastGood,
+  bad: toastBad,
+  levelup: toastLevelUp,
+  loot: toastLoot,
+  level: toastLevel
+};
