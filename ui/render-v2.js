@@ -77,7 +77,7 @@ function showStartScreen() {
   // ФОН-ОБЛОЖКА (карта Вейлана)
   screen.classList.add('start-screen');
   screen.style.backgroundImage =
-    'linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.2) 30%, rgba(0,0,0,0.3) 60%, rgba(0,0,0,0.55) 100%),' +
+    'linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.15) 40%, rgba(0,0,0,0.2) 70%, rgba(0,0,0,0.45) 100%),' +
     'url(sprites/backgrounds/character_creation.png)';
   screen.style.backgroundSize = 'cover, cover';
   screen.style.backgroundPosition = 'center, center';
@@ -86,8 +86,7 @@ function showStartScreen() {
   const intro = document.createElement('div');
   intro.className = 'intro start-intro';
   intro.innerHTML =
-    '<img src="sprites/fx/logo.png?v=1" alt="ВЕЙЛАН" class="start-logo" style="display:block;margin:8px auto 12px;max-width:80%;height:auto;image-rendering:pixelated;">' +
-    '<p class="sub start-sub">Мир расколот. Завеса пала. Осколки Зари разлетелись по пустоте,<br>' +
+    '<p class="sub start-sub" style="margin-top:40px;">Мир расколот. Завеса пала. Осколки Зари разлетелись по пустоте,<br>' +
     'а из трещин хлынула Бездна.<br><br>' +
     'Ты — Безымянный. Осколок выбрал тебя. Помнишь ли ты, кем был?</p>' +
     '<hr class="start-hr">' +
