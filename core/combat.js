@@ -1200,7 +1200,7 @@ function attack(battle, attacker, target) {
       }
     } else if (attacker.isEnemy) {
       // Мобы бьют — новый звук удара, потише
-      if (_sfxThrottle('mob_hit', 100)) SFX.play('mob_attack', 0.4);
+      if (_sfxThrottle('mob_hit', 100)) SFX.play('mob_attack');
     }
   }
 

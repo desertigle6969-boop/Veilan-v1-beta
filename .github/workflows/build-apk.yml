@@ -51,30 +51,8 @@ jobs:
           rm -rf www/*
           cp -r $GITHUB_WORKSPACE/* www/ 2>/dev/null || true
           rm -rf www/.git www/.github www/cordova-project www/res
-          cordova plugin add cordova-plugin-splashscreen
           cordova platform add android
 
-      - name: Configure splash and icons in config.xml
-        run: |
-          cd cordova-project/app
-          python3 << 'PYEOF'
-          with open('config.xml', 'r') as f:
-              xml = f.read()
-          # Preferences для splash
-          prefs = '''
-              <preference name="SplashScreen" value="screen" />
-              <preference name="SplashScreenDelay" value="3000" />
-              <preference name="AutoHideSplashScreen" value="true" />
-              <preference name="FadeSplashScreen" value="true" />
-              <preference name="FadeSplashScreenDuration" value="500" />
-              <preference name="ShowSplashScreenSpinner" value="false" />
-          '''
-          if '<preference name="SplashScreen"' not in xml:
-              xml = xml.replace('</widget>', prefs + '</widget>', 1)
-          with open('config.xml', 'w') as f:
-              f.write(xml)
-          print("Preferences добавлены")
-          PYEOF
 
       - name: Replace icons in mipmap folders
         run: |
@@ -95,16 +73,6 @@ jobs:
           done
           echo "Иконки заменены"
 
-      - name: Replace splash screens
-        run: |
-          cd cordova-project/app/platforms/android/app/src/main/res
-          for d in drawable drawable-land-hdpi drawable-land-ldpi drawable-land-mdpi drawable-land-xhdpi drawable-land-xxhdpi drawable-land-xxxhdpi drawable-port-hdpi drawable-port-ldpi drawable-port-mdpi drawable-port-xhdpi drawable-port-xxhdpi drawable-port-xxxhdpi; do
-            if [ -d "$d" ]; then
-              cp $GITHUB_WORKSPACE/res/splash/splash-2732.png "$d/screen.png" 2>/dev/null || true
-              cp $GITHUB_WORKSPACE/res/splash/splash-2732.png "$d/splash.png" 2>/dev/null || true
-            fi
-          done
-          echo "Splash заменён (screen.png + splash.png)"
 
       - name: Build APK
         run: |

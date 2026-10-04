@@ -64,7 +64,8 @@
       }
       // Перезапускаем с начала, если уже играет
       try { a.currentTime = 0; } catch (e) {}
-      a.volume = Math.max(0, Math.min(1, getVolume() * (volumeMult || 1)));
+      var mult = (volumeMult !== undefined) ? volumeMult : 1.7;
+      a.volume = Math.max(0, Math.min(1, getVolume() * mult));
       a.play().catch(function(){});
     } catch (e) {}
   }
