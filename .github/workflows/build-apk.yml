@@ -57,8 +57,11 @@ jobs:
       - name: Replace icons in mipmap folders
         run: |
           cd cordova-project/app/platforms/android/app/src/main/res
-          # Удаляем adaptive icons — чтобы Android брал наши PNG
+          # Удаляем ВСЕ adaptive icon папки (-v26) и их XML — чтобы Android брал наши PNG
           rm -rf mipmap-anydpi-v26
+          rm -rf mipmap-*-v26
+          find . -name "ic_launcher.xml" -delete
+          find . -name "ic_launcher_round.xml" -delete
           rm -f mipmap-*/ic_launcher_foreground.png
           rm -f mipmap-*/ic_launcher_background.png
           rm -f mipmap-*/ic_launcher_round.png
