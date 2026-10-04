@@ -57,12 +57,19 @@ jobs:
       - name: Replace icons in mipmap folders
         run: |
           cd cordova-project/app/platforms/android/app/src/main/res
-          cp $GITHUB_WORKSPACE/res/android/ldpi.png    mipmap-ldpi/ic_launcher.png
-          cp $GITHUB_WORKSPACE/res/android/mdpi.png    mipmap-mdpi/ic_launcher.png
-          cp $GITHUB_WORKSPACE/res/android/hdpi.png    mipmap-hdpi/ic_launcher.png
-          cp $GITHUB_WORKSPACE/res/android/xhdpi.png   mipmap-xhdpi/ic_launcher.png
-          cp $GITHUB_WORKSPACE/res/android/xxhdpi.png  mipmap-xxhdpi/ic_launcher.png
-          cp $GITHUB_WORKSPACE/res/android/xxxhdpi.png mipmap-xxxhdpi/ic_launcher.png
+          # Удаляем adaptive icons — чтобы Android брал наши PNG
+          rm -rf mipmap-anydpi-v26
+          rm -f mipmap-*/ic_launcher_foreground.png
+          rm -f mipmap-*/ic_launcher_background.png
+          rm -f mipmap-*/ic_launcher_round.png
+          # Копируем наши иконки под всеми именами
+          for d in ldpi mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            if [ -d "mipmap-$d" ]; then
+              cp $GITHUB_WORKSPACE/res/android/$d.png mipmap-$d/ic_launcher.png
+              cp $GITHUB_WORKSPACE/res/android/$d.png mipmap-$d/ic_launcher_round.png
+              cp $GITHUB_WORKSPACE/res/android/$d.png mipmap-$d/ic_launcher_foreground.png
+            fi
+          done
           echo "Иконки заменены"
 
       - name: Replace splash screens
