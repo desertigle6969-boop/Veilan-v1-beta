@@ -234,6 +234,15 @@ function renderEnemies(container, battle) {
       try { sprite = Sprite.renderMobSprite(u.mobId, u.name, 44); } catch (e) { sprite = null; }
     }
     if (sprite) {
+      // Оживление: дыхание (каждый со своей задержкой)
+      sprite.classList.add('sprite-breath');
+      var shake = u.statuses && u.statuses.some(function(s) { return s.id === 'stun' || s.id === 'freeze'; });
+      if (shake) {
+        sprite.classList.remove('sprite-breath');
+        sprite.classList.add('sprite-shake');
+      } else {
+        sprite.style.animationDelay = (Math.random() * 2).toFixed(2) + 's';
+      }
       spriteWrap.appendChild(sprite);
     } else {
       spriteWrap.innerHTML = '<div style="font-size:24px;padding:18px;">?</div>';
@@ -454,6 +463,15 @@ function renderAllies(container, battle) {
       try { sprite = Sprite.renderHeroSprite(u.ref, 44); } catch (e) { sprite = null; }
     }
     if (sprite) {
+      // Оживление: дыхание
+      sprite.classList.add('sprite-breath');
+      var shakeA = u.statuses && u.statuses.some(function(s) { return s.id === 'stun' || s.id === 'freeze'; });
+      if (shakeA) {
+        sprite.classList.remove('sprite-breath');
+        sprite.classList.add('sprite-shake');
+      } else {
+        sprite.style.animationDelay = (Math.random() * 2).toFixed(2) + 's';
+      }
       spriteWrap.appendChild(sprite);
     } else {
       spriteWrap.innerHTML = '<div style="font-size:24px;padding:18px;">?</div>';
