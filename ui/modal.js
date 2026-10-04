@@ -33,6 +33,16 @@ function openModal(opts) {
   const el = getModalEl();
   el.innerHTML = '';
 
+  // Фон модалки (если передан bg)
+  if (o.bg) {
+    el.style.backgroundImage = 'linear-gradient(180deg, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.65) 100%), url(' + o.bg + ')';
+    el.style.backgroundSize = 'cover';
+    el.style.backgroundPosition = 'center';
+    el.style.backgroundRepeat = 'no-repeat';
+  } else {
+    el.style.backgroundImage = '';
+  }
+
   const inner = document.createElement('div');
   inner.className = 'overlay-inner';
   inner.style.animation = 'modalIn 0.2s';
@@ -164,6 +174,8 @@ const CREATION_STATE = {
 };
 
 function startCharacterCreation(onComplete) {
+  // Сохраняем фон для шагов создания
+  window._creationBg = 'sprites/backgrounds/character_creation.png';
   if (typeof RACES === 'undefined' || typeof CLASSES === 'undefined') {
     Toast && Toast.bad('Ошибка: данные рас/классов не загружены');
     if (onComplete) onComplete(null);
@@ -224,6 +236,7 @@ function renderRaceStep(onComplete) {
   openModal({
     title: 'Создание героя — Шаг 1 из 3: Раса',
     content: body,
+    bg: window._creationBg,
     buttons: [
       { text: 'Отмена', type: 'danger', onClick: function() { if (onComplete) onComplete(null); } }
     ],
@@ -273,6 +286,7 @@ function renderClassStep(onComplete) {
   openModal({
     title: 'Создание героя — Шаг 2 из 3: Класс',
     content: body,
+    bg: window._creationBg,
     buttons: [
       { text: 'Назад', type: 'default', onClick: function() { renderRaceStep(onComplete); } },
       { text: 'Отмена', type: 'danger', onClick: function() { if (onComplete) onComplete(null); } }
@@ -343,6 +357,7 @@ function renderNameStep(onComplete) {
   openModal({
     title: 'Создание героя — Шаг 3 из 3: Имя',
     content: body,
+    bg: window._creationBg,
     buttons: [
       { text: 'Назад', type: 'default', onClick: function() { renderClassStep(onComplete); } },
       { text: 'Начать игру', type: 'good', close: false, onClick: tryCreate }
