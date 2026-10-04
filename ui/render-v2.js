@@ -78,7 +78,7 @@ function showStartScreen() {
   screen.classList.add('start-screen');
   screen.style.backgroundImage =
     'linear-gradient(180deg, rgba(0,0,0,0.35) 0%, rgba(0,0,0,0.2) 30%, rgba(0,0,0,0.3) 60%, rgba(0,0,0,0.55) 100%),' +
-    'url(sprites/backgrounds/title.png)';
+    'url(sprites/backgrounds/character_creation.png)';
   screen.style.backgroundSize = 'cover, cover';
   screen.style.backgroundPosition = 'center, center';
   screen.style.backgroundRepeat = 'no-repeat, no-repeat';
