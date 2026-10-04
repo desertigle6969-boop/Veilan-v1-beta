@@ -51,40 +51,29 @@ jobs:
           rm -rf www/*
           cp -r $GITHUB_WORKSPACE/* www/ 2>/dev/null || true
           rm -rf www/.git www/.github www/cordova-project www/res
-          # Копируем иконки и splash в ресурсы Cordova
-          mkdir -p res/android res/splash
-          cp $GITHUB_WORKSPACE/res/android/*.png res/android/ 2>/dev/null || true
-          cp $GITHUB_WORKSPACE/res/splash/*.png res/splash/ 2>/dev/null || true
+          cordova plugin add cordova-plugin-splashscreen || true
           cordova platform add android
 
-      - name: Add icons and splash to config.xml
+      - name: Replace icons in mipmap folders
         run: |
-          cd cordova-project/app
-          python3 << 'PYEOF'
-          import re
-          with open('config.xml', 'r') as f:
-              xml = f.read()
-          # Вставляем теги иконок и splash внутрь <platform name="android">
-          icons = '''
-              <icon density="ldpi" src="res/android/ldpi.png" />
-              <icon density="mdpi" src="res/android/mdpi.png" />
-              <icon density="hdpi" src="res/android/hdpi.png" />
-              <icon density="xhdpi" src="res/android/xhdpi.png" />
-              <icon density="xxhdpi" src="res/android/xxhdpi.png" />
-              <icon density="xxxhdpi" src="res/android/xxxhdpi.png" />
-              <splash density="port-xxxhdpi" src="res/splash/splash-2732.png" />
-              <splash density="land-xxxhdpi" src="res/splash/splash-2732.png" />
-          '''
-          # Ищем <platform name="android"> и вставляем после него
-          if '<platform name="android">' in xml:
-              xml = xml.replace('<platform name="android">', '<platform name="android">' + icons, 1)
-          else:
-              # Если секции нет — добавляем перед </widget>
-              xml = xml.replace('</widget>', '  <platform name="android">' + icons + '  </platform>\n</widget>', 1)
-          with open('config.xml', 'w') as f:
-              f.write(xml)
-          print("Иконки и splash добавлены в config.xml")
-          PYEOF
+          cd cordova-project/app/platforms/android/app/src/main/res
+          cp $GITHUB_WORKSPACE/res/android/ldpi.png    mipmap-ldpi/ic_launcher.png
+          cp $GITHUB_WORKSPACE/res/android/mdpi.png    mipmap-mdpi/ic_launcher.png
+          cp $GITHUB_WORKSPACE/res/android/hdpi.png    mipmap-hdpi/ic_launcher.png
+          cp $GITHUB_WORKSPACE/res/android/xhdpi.png   mipmap-xhdpi/ic_launcher.png
+          cp $GITHUB_WORKSPACE/res/android/xxhdpi.png  mipmap-xxhdpi/ic_launcher.png
+          cp $GITHUB_WORKSPACE/res/android/xxxhdpi.png mipmap-xxxhdpi/ic_launcher.png
+          echo "Иконки заменены"
+
+      - name: Replace splash screens
+        run: |
+          cd cordova-project/app/platforms/android/app/src/main/res
+          for d in drawable drawable-land-hdpi drawable-land-ldpi drawable-land-mdpi drawable-land-xhdpi drawable-land-xxhdpi drawable-land-xxxhdpi drawable-port-hdpi drawable-port-ldpi drawable-port-mdpi drawable-port-xhdpi drawable-port-xxhdpi drawable-port-xxxhdpi; do
+            if [ -d "$d" ]; then
+              cp $GITHUB_WORKSPACE/res/splash/splash-2732.png "$d/screen.png" 2>/dev/null || true
+            fi
+          done
+          echo "Splash заменён"
 
       - name: Build APK
         run: |
