@@ -4,6 +4,26 @@
 // ============================================================
 
 const ITEM_ICONS = {
+  // ---- worn (стартовые) ----
+  worn_sword:        'sprites/icons/weapon/ATC_Weapon_1hs01.png',
+  worn_dagger:       'sprites/icons/weapon/ATC_Weapon_1hs05.png',
+  worn_staff:        'sprites/icons/weapon/ATC_Weapon_1hs10.png',
+  worn_spear:        'sprites/icons/weapon/ATC_Weapon_1hs15.png',
+  worn_axe:          'sprites/icons/weapon/ATC_Weapon_1hs20.png',
+  worn_hammer:       'sprites/icons/weapon/ATC_Weapon_1hs22.png',
+  worn_bow:          'sprites/icons/weapon/ATC_Weapon_Bow01.png',
+  worn_lute:         'sprites/icons/weapon/ATC_Weapon_1hs02.png',
+  worn_light_helm:   'sprites/icons/helmet/BTN_Armor_Head01.png',
+  worn_light_chest:  'sprites/icons/chest/BTN_Armor_Chest01.png',
+  worn_light_legs:   'sprites/icons/legs/BTN_Armor_Legs01.png',
+  worn_med_helm:     'sprites/icons/helmet/BTN_Armor_Head05.png',
+  worn_med_chest:    'sprites/icons/chest/BTN_Armor_Chest05.png',
+  worn_med_legs:     'sprites/icons/legs/BTN_Armor_Legs02.png',
+  worn_heavy_helm:   'sprites/icons/helmet/BTN_Armor_Head10.png',
+  worn_heavy_chest:  'sprites/icons/chest/BTN_Armor_Chest10.png',
+  worn_heavy_legs:   'sprites/icons/legs/BTN_armor_hard_leather_pants_i00.png',
+  worn_cloak:        'sprites/icons/cloak/BTN_Armor_Back01.png',
+
   // ---- amulet ----
   amulet_bone: 'sprites/icons/amulet2/BTN_accessary_cerberuss_necklace_i00.png',
   amulet_sapphire: 'sprites/icons/amulet2/BTN_accessary_blessed_necklace_i00.png',

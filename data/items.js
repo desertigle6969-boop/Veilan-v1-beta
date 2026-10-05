@@ -1,4 +1,4 @@
-const ITEMS = Object.assign({}, ITEMS_WEAPON, ITEMS_ARMOR, ITEMS_MISC, ITEMS_SECRET, ITEMS_TIER8);
+const ITEMS = Object.assign({}, ITEMS_WEAPON, ITEMS_ARMOR, ITEMS_MISC, ITEMS_SECRET, ITEMS_TIER8, ITEMS_STARTING);
 
 function getItem(id) { return ITEMS[id] || null; }
 function getItemsByType(type) { return Object.values(ITEMS).filter(i => i.type === type); }

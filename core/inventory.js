@@ -531,12 +531,81 @@ function sortInventory() {
 }
 
 // ============================================================
+// СТАРТОВЫЙ КОМПЛЕКТ
+// ============================================================
+
+function giveStartingKit(hero) {
+  if (!hero || !window.STATE) return;
+
+  var cls = hero.classId;
+  var race = hero.raceId;
+
+  // Проверяем, есть ли данные
+  if (typeof STARTING_WEAPON === 'undefined' || typeof STARTING_ARMOR === 'undefined') {
+    console.warn('[inventory] starting_kit не загружен');
+    return;
+  }
+
+  // 1. Оружие
+  var weaponId = STARTING_WEAPON[cls];
+  var armorType = STARTING_ARMOR[cls];
+  // Если armorType — объект, выбираем по расе
+  if (armorType && typeof armorType === 'object') {
+    armorType = armorType[race] || 'light';
+  }
+  if (!armorType) armorType = 'light';
+
+  var armorSet = ARMOR_SETS[armorType] || ARMOR_SETS.light;
+  var items = [];
+  if (weaponId) items.push(weaponId);
+  if (armorSet) {
+    if (armorSet.helmet) items.push(armorSet.helmet);
+    if (armorSet.chest)  items.push(armorSet.chest);
+    if (armorSet.legs)   items.push(armorSet.legs);
+  }
+  if (typeof STARTING_CLOAK !== 'undefined' && STARTING_CLOAK) items.push(STARTING_CLOAK);
+
+  // 2. Кладём в инвентарь
+  items.forEach(function(itemId) {
+    var item = ITEMS[itemId];
+    if (!item) {
+      console.warn('[inventory] стартовый предмет не найден:', itemId);
+      return;
+    }
+    window.STATE.inventory.push({
+      uid: window.STATE._nextUid++,
+      itemId: itemId,
+      quantity: 1,
+      durability: item.durability || 100,
+      enhancement: 0,
+      gems: [null, null, null]
+    });
+  });
+
+  // 3. Надеваем
+  var inv = window.STATE.inventory;
+  for (var i = inv.length - 1; i >= 0; i--) {
+    var slot = inv[i];
+    if (items.indexOf(slot.itemId) === -1) continue;
+    var itemDef = ITEMS[slot.itemId];
+    if (!itemDef || !itemDef.slot) continue;
+    var r = equipItem(i);
+    if (!r.ok) {
+      console.warn('[inventory] не удалось надеть', slot.itemId, '-', r.reason);
+    }
+  }
+
+  console.log('[inventory] стартовый набор выдан:', cls, race, '| броня:', armorType);
+}
+
+// ============================================================
 // ЭКСПОРТ
 // ============================================================
 
 window.Inventory = {
   MAX_INVENTORY_SLOTS,
   EQUIP_SLOTS,
+  giveStartingKit,
   getInventory,
   findByUid,
   findSlot,

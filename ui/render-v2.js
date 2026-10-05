@@ -101,6 +101,10 @@ function showStartScreen() {
     Modal.characterCreation(function(hero) {
       if (!hero) return;
       STATE.hero = hero;
+      // Выдать стартовый комплект (оружие + броня по классу)
+      if (window.Inventory && Inventory.giveStartingKit) {
+        Inventory.giveStartingKit(hero);
+      }
       Save.saveState();
       Save.startAutoSave();
       if (window.SFX) SFX.play('level_up');
